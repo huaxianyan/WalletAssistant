@@ -5,6 +5,7 @@ androidx-activity = "1.10.1"
 compose-bom = "2025.05.01"
 ksp = "2.1.20-1.0.32"
 lifecycle = "2.9.1"
+play-services-auth = "21.6.0"
 room = "2.7.1"
 serialization-json = "1.8.1"
 
@@ -20,6 +21,7 @@ androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization-json" }
+play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "play-services-auth" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

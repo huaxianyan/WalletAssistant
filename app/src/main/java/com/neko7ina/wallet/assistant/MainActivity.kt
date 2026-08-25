@@ -1,8 +1,11 @@
 package com.neko7ina.wallet.assistant
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,47 +36,133 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.Scope
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
-import com.neko7ina.wallet.assistant.core.model.TravelSegment
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
+    private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
+    private var gmailAuthorizationCallback: ((Result<String>) -> Unit)? = null
+    private val gmailAuthorizationLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) { activityResult ->
+        if (activityResult.resultCode != Activity.RESULT_OK) {
+            deliverGmailAuthorization(Result.failure(IllegalStateException("Authorization canceled")))
+            return@registerForActivityResult
+        }
+        val result = runCatching {
+            authorizationClient.getAuthorizationResultFromIntent(
+                requireNotNull(activityResult.data),
+            ).accessToken ?: error("Missing access token")
+        }
+        deliverGmailAuthorization(result)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { TravelWalletApp() }
+        setContent {
+            TravelWalletApp(requestGmailAuthorization = ::requestGmailAuthorization)
+        }
+    }
+
+    private fun requestGmailAuthorization(callback: (Result<String>) -> Unit) {
+        gmailAuthorizationCallback = callback
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(listOf(Scope(GMAIL_READONLY_SCOPE)))
+            .build()
+        authorizationClient.authorize(request)
+            .addOnSuccessListener { result ->
+                if (result.hasResolution()) {
+                    val pendingIntent = result.pendingIntent
+                    if (pendingIntent == null) {
+                        deliverGmailAuthorization(Result.failure(IllegalStateException("Missing resolution")))
+                    } else {
+                        gmailAuthorizationLauncher.launch(
+                            IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
+                        )
+                    }
+                } else {
+                    val accessToken = result.accessToken
+                    if (accessToken == null) {
+                        deliverGmailAuthorization(Result.failure(IllegalStateException("Missing access token")))
+                    } else {
+                        deliverGmailAuthorization(Result.success(accessToken))
+                    }
+                }
+            }
+            .addOnFailureListener { error ->
+                deliverGmailAuthorization(Result.failure(error))
+            }
+    }
+
+    private fun deliverGmailAuthorization(result: Result<String>) {
+        gmailAuthorizationCallback?.invoke(result)
+        gmailAuthorizationCallback = null
+    }
+
+    private companion object {
+        const val GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
     }
 }
 
 private enum class Screen {
     HOME,
-    IMPORT,
+    GMAIL_IMPORT,
+    TEXT_IMPORT,
     CONFIRM,
 }
 
 @Composable
-private fun TravelWalletApp(viewModel: TravelWalletViewModel = viewModel()) {
+private fun TravelWalletApp(
+    requestGmailAuthorization: ((Result<String>) -> Unit) -> Unit,
+    viewModel: TravelWalletViewModel = viewModel(),
+) {
     val savedDocuments by viewModel.documents.collectAsStateWithLifecycle()
+    val gmailImportState by viewModel.gmailImportState.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var emailBody by rememberSaveable { mutableStateOf("") }
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
     var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
+    var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             when (screen) {
                 Screen.HOME -> HomeScreen(
                     documents = savedDocuments,
-                    onImport = {
+                    onGmailImport = {
+                        screen = Screen.GMAIL_IMPORT
+                        viewModel.beginGmailAuthorization()
+                        requestGmailAuthorization { result ->
+                            result.fold(
+                                onSuccess = viewModel::loadFromGmail,
+                                onFailure = { viewModel.gmailAuthorizationFailed() },
+                            )
+                        }
+                    },
+                    onTextImport = {
                         emailBody = ""
                         parseError = null
-                        screen = Screen.IMPORT
+                        screen = Screen.TEXT_IMPORT
                     },
                 )
 
-                Screen.IMPORT -> ImportScreen(
+                Screen.GMAIL_IMPORT -> GmailImportScreen(
+                    state = gmailImportState,
+                    onBack = { screen = Screen.HOME },
+                    onSelect = { document ->
+                        parsedDocument = document
+                        confirmationSource = Screen.GMAIL_IMPORT
+                        screen = Screen.CONFIRM
+                    },
+                )
+
+                Screen.TEXT_IMPORT -> ImportScreen(
                     emailBody = emailBody,
                     error = parseError,
                     onBodyChange = {
@@ -89,6 +179,7 @@ private fun TravelWalletApp(viewModel: TravelWalletViewModel = viewModel()) {
                             is ParseResult.Success -> {
                                 parsedDocument = result.document
                                 parseError = null
+                                confirmationSource = Screen.TEXT_IMPORT
                                 screen = Screen.CONFIRM
                             }
 
@@ -99,7 +190,7 @@ private fun TravelWalletApp(viewModel: TravelWalletViewModel = viewModel()) {
 
                 Screen.CONFIRM -> ConfirmationScreen(
                     document = requireNotNull(parsedDocument),
-                    onBack = { screen = Screen.IMPORT },
+                    onBack = { screen = confirmationSource },
                     onSave = {
                         viewModel.save(requireNotNull(parsedDocument))
                         screen = Screen.HOME
@@ -113,7 +204,8 @@ private fun TravelWalletApp(viewModel: TravelWalletViewModel = viewModel()) {
 @Composable
 private fun HomeScreen(
     documents: List<TravelDocument>,
-    onImport: () -> Unit,
+    onGmailImport: () -> Unit,
+    onTextImport: () -> Unit,
 ) {
     if (documents.isEmpty()) {
         Column(
@@ -129,8 +221,11 @@ private fun HomeScreen(
                 modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Button(onClick = onImport) {
-                Text("导入邮件正文")
+            Button(onClick = onGmailImport) {
+                Text("从 Gmail 导入")
+            }
+            TextButton(onClick = onTextImport) {
+                Text("粘贴邮件正文")
             }
         }
     } else {
@@ -147,13 +242,100 @@ private fun HomeScreen(
                     modifier = Modifier.padding(top = 24.dp),
                 )
             }
-            OutlinedButton(
-                onClick = onImport,
+            Button(
+                onClick = onGmailImport,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .padding(top = 24.dp),
             ) {
-                Text("导入另一封邮件")
+                Text("从 Gmail 导入")
+            }
+            TextButton(
+                onClick = onTextImport,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text("粘贴邮件正文")
+            }
+        }
+    }
+}
+
+@Composable
+private fun GmailImportScreen(
+    state: GmailImportState,
+    onBack: () -> Unit,
+    onSelect: (TravelDocument) -> Unit,
+) {
+    when (state) {
+        GmailImportState.Idle,
+        GmailImportState.Authorizing,
+        GmailImportState.Loading,
+        -> Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = if (state == GmailImportState.Loading) {
+                    "正在查找购票邮件…"
+                } else {
+                    "正在连接 Gmail…"
+                },
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
+
+        is GmailImportState.Error -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("无法导入邮件", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = state.message,
+                modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+            )
+            OutlinedButton(onClick = onBack) {
+                Text("返回")
+            }
+        }
+
+        is GmailImportState.Success -> Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+        ) {
+            Text("选择行程", style = MaterialTheme.typography.headlineMedium)
+            if (state.documents.isEmpty()) {
+                Text(
+                    text = "最近两年没有找到可识别的购票成功邮件，可以改用粘贴邮件正文。",
+                    modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
+                )
+            } else {
+                state.documents.forEach { document ->
+                    TripCard(
+                        document = document,
+                        modifier = Modifier.padding(top = 24.dp),
+                    )
+                    Button(
+                        onClick = { onSelect(document) },
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .padding(top = 8.dp),
+                    ) {
+                        Text("选择此行程")
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text("返回")
             }
         }
     }
