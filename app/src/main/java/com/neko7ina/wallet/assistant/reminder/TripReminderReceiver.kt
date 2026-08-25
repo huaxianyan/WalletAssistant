@@ -30,10 +30,11 @@ import java.time.format.DateTimeFormatter
 
 class TripReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_REMINDER) {
-            handleReminder(context, intent)
-        } else {
-            rescheduleEnabledTrips(context)
+        when (intent.action) {
+            ACTION_REMINDER -> handleReminder(context, intent)
+            ACTION_BOARDED -> handleNotificationAction(context, intent, archive = true)
+            ACTION_CANCEL_REMINDER -> handleNotificationAction(context, intent, archive = false)
+            else -> rescheduleEnabledTrips(context)
         }
     }
 
@@ -64,13 +65,17 @@ class TripReminderReceiver : BroadcastReceiver() {
             .setContentTitle(title)
             .setContentText("$departure · $route")
             .setStyle(
-                NotificationCompat.InboxStyle()
+                NotificationCompat.BigTextStyle()
                     .setBigContentTitle(title)
-                    .addLine("出发　$departure")
-                    .addLine("行程　$route")
-                    .addLine("座位　$seatDescription"),
+                    .bigText("$departure\n$route\n$seatDescription"),
             )
             .setContentIntent(contentIntent(context, documentId))
+            .addAction(0, "已上车", notificationAction(context, documentId, ACTION_BOARDED))
+            .addAction(
+                0,
+                "取消提醒",
+                notificationAction(context, documentId, ACTION_CANCEL_REMINDER),
+            )
             .setAutoCancel(kind == ReminderKind.STANDARD)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -88,6 +93,28 @@ class TripReminderReceiver : BroadcastReceiver() {
             }
             .build()
         NotificationManagerCompat.from(context).notify(notificationId(documentId), notification)
+    }
+
+    private fun handleNotificationAction(context: Context, intent: Intent, archive: Boolean) {
+        val documentId = intent.getStringExtra(KEY_DOCUMENT_ID) ?: return
+        cancelNotification(context, documentId)
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val repository = TravelDocumentRepository(
+                    TravelWalletDatabase.getInstance(context).travelDocumentDao(),
+                )
+                if (archive) {
+                    repository.setArchived(documentId, true)
+                    TripAutoArchiveScheduler(context).cancel(documentId)
+                } else {
+                    repository.setReminderEnabled(documentId, false)
+                }
+                TripReminderScheduler(context).cancel(documentId)
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 
     private fun rescheduleEnabledTrips(context: Context) {
@@ -109,6 +136,10 @@ class TripReminderReceiver : BroadcastReceiver() {
     companion object {
         private const val ACTION_REMINDER =
             "com.neko7ina.wallet.assistant.action.TRIP_REMINDER"
+        private const val ACTION_BOARDED =
+            "com.neko7ina.wallet.assistant.action.TRIP_BOARDED"
+        private const val ACTION_CANCEL_REMINDER =
+            "com.neko7ina.wallet.assistant.action.CANCEL_TRIP_REMINDER"
         private const val CHANNEL_ID = "trip_departure_reminders"
         private const val KEY_DOCUMENT_ID = "document_id"
         private const val KEY_KIND = "kind"
@@ -175,6 +206,24 @@ class TripReminderReceiver : BroadcastReceiver() {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+
+        private fun notificationAction(
+            context: Context,
+            documentId: String,
+            action: String,
+        ): PendingIntent {
+            val intent = Intent(context, TripReminderReceiver::class.java).apply {
+                this.action = action
+                data = Uri.parse("walletassistant://reminder-action/$documentId/$action")
+                putExtra(KEY_DOCUMENT_ID, documentId)
+            }
+            return PendingIntent.getBroadcast(
+                context,
+                "$documentId:$action".hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
         }
 
         private fun contentIntent(context: Context, documentId: String): PendingIntent {

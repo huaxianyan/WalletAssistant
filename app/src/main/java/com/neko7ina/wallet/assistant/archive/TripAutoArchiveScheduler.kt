@@ -34,7 +34,7 @@ class TripAutoArchiveScheduler(context: Context) {
             return
         }
         if (saved.document.hasDeparted()) {
-            archiveIfDeparted(documentId)
+            cancel(documentId)
             return
         }
         val departure = saved.document.segments.minOf { it.departureTime.toInstant() }

@@ -341,7 +341,6 @@ fun TravelWalletApp(
                 saved = saved,
                 walletAvailability = walletAvailability,
                 showGoogleWalletAction = googleWalletActionVisible,
-                autoArchiveDepartedTrips = autoArchiveDepartedTrips,
                 departureReminderMinutes = departureReminderMinutes,
                 liveStatusMinutes = liveStatusMinutes,
                 onDismiss = { selectedTripId = null },
@@ -558,7 +557,6 @@ private fun TripDetailDialog(
     saved: SavedTravelDocument,
     walletAvailability: WalletAvailability,
     showGoogleWalletAction: Boolean,
-    autoArchiveDepartedTrips: Boolean,
     departureReminderMinutes: Int,
     liveStatusMinutes: Int,
     onDismiss: () -> Unit,
@@ -663,23 +661,13 @@ private fun TripDetailDialog(
                 }
 
                 if (saved.archived) {
-                    val restoreBlocked = autoArchiveDepartedTrips && hasDeparted
                     OutlinedButton(
                         onClick = onRestore,
-                        enabled = !restoreBlocked,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 20.dp),
                     ) {
                         Text("恢复到我的行程")
-                    }
-                    if (restoreBlocked) {
-                        Text(
-                            "关闭自动归档后可恢复这趟行程",
-                            modifier = Modifier.padding(top = 4.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 } else {
                     OutlinedButton(
@@ -797,7 +785,7 @@ private fun SettingsScreen(
             item {
                 SettingSwitch(
                     title = "自动归档已结束行程",
-                    description = "行程出发后移入已归档行程并关闭提醒",
+                    description = "只在未来行程出发时归档，不追溯已结束行程",
                     checked = autoArchiveDepartedTrips,
                     onCheckedChange = onAutoArchiveDepartedTripsChange,
                 )
