@@ -13,3 +13,4 @@ wallet.properties
 .externalNativeBuild/
 .cxx/
 .DS_Store
+/AGENTS.md
