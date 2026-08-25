@@ -53,7 +53,8 @@ class TripReminderReceiver : BroadcastReceiver() {
         val departure = intent.getStringExtra(KEY_DEPARTURE) ?: return
         val displayEnd = intent.getLongExtra(KEY_DISPLAY_END, 0L)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_train_notification)
+            .setSmallIcon(R.drawable.ic_china_railway_notification)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setContentTitle(
                 if (kind == ReminderKind.LIVE) {
                     "$serviceNumber 即将发车"
