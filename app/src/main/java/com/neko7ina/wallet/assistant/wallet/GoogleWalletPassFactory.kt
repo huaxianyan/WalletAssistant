@@ -19,7 +19,8 @@ class GoogleWalletPassFactory {
 
     fun createUnsignedPass(document: TravelDocument): String {
         val classId = "${BuildConfig.WALLET_ISSUER_ID}.${BuildConfig.WALLET_CLASS_SUFFIX}"
-        val objectId = "${BuildConfig.WALLET_ISSUER_ID}.${document.stableId()}"
+        val objectId = "${BuildConfig.WALLET_ISSUER_ID}." +
+            "${BuildConfig.WALLET_CLASS_SUFFIX}_${document.stableId()}"
         val segment = document.segments.first()
         val seat = segment.seatAssignments.first()
 
@@ -31,7 +32,18 @@ class GoogleWalletPassFactory {
             putJsonArray("origins") {}
             putJsonObject("payload") {
                 putJsonArray("genericClasses") {
-                    addJsonObject { put("id", classId) }
+                    addJsonObject {
+                        put("id", classId)
+                        putJsonObject("classTemplateInfo") {
+                            putJsonObject("cardTemplateOverride") {
+                                putJsonArray("cardRowTemplateInfos") {
+                                    add(twoItemRow("origin", "destination"))
+                                    add(twoItemRow("departure_date", "departure_time"))
+                                    add(twoItemRow("train_number", "seat"))
+                                }
+                            }
+                        }
+                    }
                 }
                 putJsonArray("genericObjects") {
                     addJsonObject {
@@ -47,10 +59,7 @@ class GoogleWalletPassFactory {
                                 "${segment.serviceNumber} ${segment.origin.name} → ${segment.destination.name}",
                             ),
                         )
-                        put(
-                            "subheader",
-                            localized(segment.departureTime.format(DEPARTURE_FORMAT)),
-                        )
+                        put("subheader", localized(document.travelers.first().name))
                         putJsonObject("validTimeInterval") {
                             putJsonObject("start") {
                                 put(
@@ -66,7 +75,19 @@ class GoogleWalletPassFactory {
                             }
                         }
                         putJsonArray("textModulesData") {
-                            addTextModule("departure", "出发", segment.departureTime.format(DEPARTURE_DETAIL_FORMAT))
+                            addTextModule("origin", "出发站", segment.origin.name)
+                            addTextModule("destination", "目的站", segment.destination.name)
+                            addTextModule(
+                                "departure_date",
+                                "出发日期",
+                                segment.departureTime.format(DEPARTURE_DATE_FORMAT),
+                            )
+                            addTextModule(
+                                "departure_time",
+                                "出发时间",
+                                segment.departureTime.format(DEPARTURE_TIME_FORMAT),
+                            )
+                            addTextModule("train_number", "列车号", segment.serviceNumber)
                             addTextModule("seat", "座位", "${seat.section} 车 ${seat.seat}")
                             addTextModule("seat_class", "席别", seat.category)
                             addTextModule("traveler", "乘车人", document.travelers.first().name)
@@ -76,6 +97,29 @@ class GoogleWalletPassFactory {
             }
         }
         return json.encodeToString(JsonObject.serializer(), claims)
+    }
+
+    private fun twoItemRow(startId: String, endId: String): JsonObject = buildJsonObject {
+        putJsonObject("twoItems") {
+            putJsonObject("startItem") {
+                putJsonObject("firstValue") {
+                    putJsonArray("fields") {
+                        addJsonObject {
+                            put("fieldPath", "object.textModulesData['$startId']")
+                        }
+                    }
+                }
+            }
+            putJsonObject("endItem") {
+                putJsonObject("firstValue") {
+                    putJsonArray("fields") {
+                        addJsonObject {
+                            put("fieldPath", "object.textModulesData['$endId']")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun localized(value: String): JsonObject = buildJsonObject {
@@ -98,9 +142,7 @@ class GoogleWalletPassFactory {
     }
 
     private companion object {
-        val DEPARTURE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")
-        val DEPARTURE_DETAIL_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern(
-            "yyyy 年 M 月 d 日 HH:mm · VV",
-        )
+        val DEPARTURE_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日")
+        val DEPARTURE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 }
