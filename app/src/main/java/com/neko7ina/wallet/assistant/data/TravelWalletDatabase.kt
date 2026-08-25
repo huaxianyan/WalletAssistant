@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredTravelDocument::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class TravelWalletDatabase : RoomDatabase() {
@@ -25,6 +25,15 @@ abstract class TravelWalletDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE travel_documents " +
+                        "ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         @Volatile
         private var instance: TravelWalletDatabase? = null
 
@@ -33,7 +42,7 @@ abstract class TravelWalletDatabase : RoomDatabase() {
                 context.applicationContext,
                 TravelWalletDatabase::class.java,
                 "travel-wallet.db",
-            ).addMigrations(MIGRATION_1_2)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

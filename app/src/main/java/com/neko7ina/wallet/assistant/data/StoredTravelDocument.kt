@@ -22,4 +22,5 @@ data class StoredTravelDocument(
     val payload: String,
     val updatedAtEpochMillis: Long,
     @ColumnInfo(defaultValue = "0") val reminderEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
 )

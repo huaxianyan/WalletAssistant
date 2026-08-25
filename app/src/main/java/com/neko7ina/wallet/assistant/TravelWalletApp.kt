@@ -1,0 +1,1004 @@
+package com.neko7ina.wallet.assistant
+
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ImageSearch
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.stableId
+import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
+import com.neko7ina.wallet.assistant.core.parser.ParseResult
+import com.neko7ina.wallet.assistant.core.parser.RawDocument
+import com.neko7ina.wallet.assistant.data.SavedTravelDocument
+import com.neko7ina.wallet.assistant.settings.ThemeMode
+import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+
+private enum class Screen {
+    HOME,
+    ARCHIVE,
+    SETTINGS,
+    GMAIL_IMPORT,
+    TEXT_IMPORT,
+    CONFIRM,
+}
+
+private enum class WalletAvailability {
+    CHECKING,
+    AVAILABLE,
+    UNAVAILABLE,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TravelWalletApp(
+    requestGmailAuthorization: ((Result<String>) -> Unit) -> Unit,
+    checkGoogleWalletAvailability: ((Boolean) -> Unit) -> Unit,
+    addToGoogleWallet: (String) -> Unit,
+    requestNotificationPermission: ((Boolean) -> Unit) -> Unit,
+    requestExactReminderPermission: ((Boolean) -> Unit) -> Unit,
+    setDarkSystemBars: (Boolean) -> Unit,
+    viewModel: TravelWalletViewModel = viewModel(),
+) {
+    val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val archivedDocuments by viewModel.archivedDocuments.collectAsStateWithLifecycle()
+    val newTripsReminderEnabled by viewModel.newTripsReminderEnabled.collectAsStateWithLifecycle()
+    val googleWalletActionVisible by viewModel.googleWalletActionVisible.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val gmailImportState by viewModel.gmailImportState.collectAsStateWithLifecycle()
+    var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var emailBody by rememberSaveable { mutableStateOf("") }
+    var parseError by rememberSaveable { mutableStateOf<String?>(null) }
+    var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
+    var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
+    var selectedTrip by remember { mutableStateOf<SavedTravelDocument?>(null) }
+    var showAddSheet by rememberSaveable { mutableStateOf(false) }
+    var walletAvailability by remember { mutableStateOf(WalletAvailability.CHECKING) }
+    val walletPassFactory = remember { GoogleWalletPassFactory() }
+    val context = LocalContext.current
+    val useDarkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+    fun changeReminder(enabled: Boolean, apply: () -> Unit) {
+        if (!enabled) {
+            apply()
+            return
+        }
+        requestNotificationPermission { notificationGranted ->
+            if (!notificationGranted) {
+                Toast.makeText(context, "请允许通知后再开启乘车提醒。", Toast.LENGTH_LONG).show()
+                return@requestNotificationPermission
+            }
+            requestExactReminderPermission { exactReminderGranted ->
+                if (exactReminderGranted) {
+                    apply()
+                } else {
+                    Toast.makeText(context, "请允许精确提醒后再开启乘车提醒。", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun beginGmailImport() {
+        screen = Screen.GMAIL_IMPORT
+        viewModel.beginGmailAuthorization()
+        requestGmailAuthorization { result ->
+            result.fold(
+                onSuccess = viewModel::loadFromGmail,
+                onFailure = { viewModel.gmailAuthorizationFailed() },
+            )
+        }
+    }
+
+    LaunchedEffect(useDarkTheme) {
+        setDarkSystemBars(useDarkTheme)
+    }
+    LaunchedEffect(Unit) {
+        checkGoogleWalletAvailability { available ->
+            walletAvailability = if (available) WalletAvailability.AVAILABLE else WalletAvailability.UNAVAILABLE
+        }
+    }
+
+    MaterialTheme(colorScheme = if (useDarkTheme) darkColorScheme() else lightColorScheme()) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            when (screen) {
+                Screen.HOME -> HomeScreen(
+                    documents = documents,
+                    onTripClick = { selectedTrip = it },
+                    onAddClick = { showAddSheet = true },
+                    onArchiveClick = { screen = Screen.ARCHIVE },
+                    onSettingsClick = { screen = Screen.SETTINGS },
+                )
+
+                Screen.ARCHIVE -> ArchiveScreen(
+                    documents = archivedDocuments,
+                    onBack = { screen = Screen.HOME },
+                    onTripClick = { selectedTrip = it },
+                )
+
+                Screen.SETTINGS -> SettingsScreen(
+                    newTripsReminderEnabled = newTripsReminderEnabled,
+                    googleWalletActionVisible = googleWalletActionVisible,
+                    themeMode = themeMode,
+                    onBack = { screen = Screen.HOME },
+                    onNewTripsReminderChange = { enabled ->
+                        changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
+                    },
+                    onGoogleWalletVisibilityChange = viewModel::setGoogleWalletActionVisible,
+                    onThemeModeChange = viewModel::setThemeMode,
+                )
+
+                Screen.GMAIL_IMPORT -> GmailImportScreen(
+                    state = gmailImportState,
+                    onBack = { screen = Screen.HOME },
+                    onSelect = { document ->
+                        parsedDocument = document
+                        confirmationSource = Screen.GMAIL_IMPORT
+                        screen = Screen.CONFIRM
+                    },
+                )
+
+                Screen.TEXT_IMPORT -> ImportScreen(
+                    emailBody = emailBody,
+                    error = parseError,
+                    onBodyChange = {
+                        emailBody = it
+                        parseError = null
+                    },
+                    onUseSample = if (BuildConfig.DEBUG) {
+                        {
+                            emailBody = createUpcomingReminderSample()
+                            parseError = null
+                        }
+                    } else {
+                        null
+                    },
+                    onBack = { screen = Screen.HOME },
+                    onParse = {
+                        when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = emailBody))) {
+                            is ParseResult.Success -> {
+                                parsedDocument = result.document
+                                parseError = null
+                                confirmationSource = Screen.TEXT_IMPORT
+                                screen = Screen.CONFIRM
+                            }
+
+                            is ParseResult.Failure -> parseError = result.message
+                        }
+                    },
+                )
+
+                Screen.CONFIRM -> ConfirmationScreen(
+                    document = requireNotNull(parsedDocument),
+                    onBack = { screen = confirmationSource },
+                    onSave = {
+                        viewModel.save(requireNotNull(parsedDocument))
+                        screen = Screen.HOME
+                    },
+                )
+            }
+        }
+
+        if (showAddSheet) {
+            AddTripSheet(
+                onDismiss = { showAddSheet = false },
+                onGmailImport = {
+                    showAddSheet = false
+                    beginGmailImport()
+                },
+                onTextImport = {
+                    showAddSheet = false
+                    emailBody = ""
+                    parseError = null
+                    screen = Screen.TEXT_IMPORT
+                },
+            )
+        }
+
+        selectedTrip?.let { saved ->
+            TripDetailDialog(
+                saved = saved,
+                walletAvailability = walletAvailability,
+                showGoogleWalletAction = googleWalletActionVisible,
+                onDismiss = { selectedTrip = null },
+                onReminderChange = { enabled ->
+                    changeReminder(enabled) { viewModel.setReminderEnabled(saved, enabled) }
+                },
+                onTestReminder = if (BuildConfig.DEBUG && saved.reminderEnabled) {
+                    {
+                        viewModel.scheduleReminderTest(saved.document)
+                        Toast.makeText(context, "测试提醒将在 2 分钟后显示。", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    null
+                },
+                onAddToGoogleWallet = {
+                    addToGoogleWallet(walletPassFactory.createUnsignedPass(saved.document))
+                },
+                onArchive = {
+                    viewModel.setArchived(saved, true)
+                    selectedTrip = null
+                },
+                onRestore = {
+                    viewModel.setArchived(saved, false)
+                    selectedTrip = null
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeScreen(
+    documents: List<SavedTravelDocument>,
+    onTripClick: (SavedTravelDocument) -> Unit,
+    onAddClick: () -> Unit,
+    onArchiveClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = { Text("我的行程") },
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("已归档行程") },
+                                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onArchiveClick()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("设置") },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onSettingsClick()
+                                },
+                            )
+                        }
+                    }
+                },
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onAddClick) {
+                Icon(Icons.Default.Add, contentDescription = "添加行程")
+            }
+        },
+    ) { contentPadding ->
+        if (documents.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("还没有行程", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "点击右下角添加行程",
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { Spacer(Modifier.height(4.dp)) }
+                items(documents, key = { it.document.stableId() }) { saved ->
+                    CompactTripCard(
+                        saved = saved,
+                        onClick = { onTripClick(saved) },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(88.dp)) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ArchiveScreen(
+    documents: List<SavedTravelDocument>,
+    onBack: () -> Unit,
+    onTripClick: (SavedTravelDocument) -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("已归档行程", onBack) },
+    ) { contentPadding ->
+        if (documents.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("还没有归档行程", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { Spacer(Modifier.height(4.dp)) }
+                items(documents, key = { it.document.stableId() }) { saved ->
+                    CompactTripCard(
+                        saved = saved,
+                        onClick = { onTripClick(saved) },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTripCard(
+    saved: SavedTravelDocument,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val segment = saved.document.segments.first()
+    val seat = segment.seatAssignments.firstOrNull()
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    segment.serviceNumber,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    segment.departureTime.format(COMPACT_DATE_FORMAT),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "${segment.origin.name} → ${segment.destination.name}",
+                modifier = Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    segment.departureTime.format(COMPACT_TIME_FORMAT),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    seat?.let { "${it.section} 车 ${it.seat}" } ?: "座位待确认",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TripDetailDialog(
+    saved: SavedTravelDocument,
+    walletAvailability: WalletAvailability,
+    showGoogleWalletAction: Boolean,
+    onDismiss: () -> Unit,
+    onReminderChange: (Boolean) -> Unit,
+    onTestReminder: (() -> Unit)?,
+    onAddToGoogleWallet: () -> Unit,
+    onArchive: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val document = saved.document
+    val segment = document.segments.first()
+    val seat = segment.seatAssignments.firstOrNull()
+    val canArchive = segment.departureTime.isBefore(ZonedDateTime.now(segment.departureTime.zone))
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .heightIn(max = 720.dp),
+            shape = RoundedCornerShape(28.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+            ) {
+                Text(
+                    segment.serviceNumber,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "${segment.origin.name} → ${segment.destination.name}",
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                DetailRow("出发", segment.departureTime.format(DEPARTURE_FORMAT))
+                segment.arrivalTime?.let { DetailRow("到达", it.format(DEPARTURE_FORMAT)) }
+                DetailRow("座位", seat?.let { "${it.section} 车 ${it.seat}" } ?: "待确认")
+                seat?.category?.let { DetailRow("席别", it) }
+                DetailRow("乘车人", document.travelers.joinToString("、") { it.name })
+                DetailRow("订单", document.reservation.reference)
+                DetailRow("来源", document.provider.name)
+
+                if (!saved.archived) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("乘车提醒", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "发车前 3 小时提醒，临近发车时显示实时状态",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = saved.reminderEnabled,
+                            onCheckedChange = onReminderChange,
+                        )
+                    }
+                }
+
+                if (onTestReminder != null) {
+                    TextButton(
+                        onClick = onTestReminder,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("测试锁屏提醒")
+                    }
+                }
+
+                if (showGoogleWalletAction && !saved.archived) {
+                    when (walletAvailability) {
+                        WalletAvailability.AVAILABLE -> GoogleWalletButton(
+                            onClick = onAddToGoogleWallet,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(top = 12.dp),
+                        )
+
+                        WalletAvailability.UNAVAILABLE -> Text(
+                            "请安装或更新 Google Wallet 后重试。",
+                            modifier = Modifier.padding(top = 16.dp),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+
+                        WalletAvailability.CHECKING -> Unit
+                    }
+                }
+
+                if (saved.archived) {
+                    OutlinedButton(
+                        onClick = onRestore,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 20.dp),
+                    ) {
+                        Text("恢复到我的行程")
+                    }
+                } else if (canArchive) {
+                    OutlinedButton(
+                        onClick = onArchive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 20.dp),
+                    ) {
+                        Text("归档行程")
+                    }
+                }
+
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("关闭")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTripSheet(
+    onDismiss: () -> Unit,
+    onGmailImport: () -> Unit,
+    onTextImport: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(
+            "添加行程",
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        ListItem(
+            headlineContent = { Text("从 Gmail 导入") },
+            supportingContent = { Text("查找已授权邮箱中的购票成功邮件") },
+            leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },
+            modifier = Modifier.clickable(onClick = onGmailImport),
+        )
+        ListItem(
+            headlineContent = { Text("粘贴邮件正文") },
+            supportingContent = { Text("手动粘贴购票成功邮件内容") },
+            leadingContent = { Icon(Icons.Default.ContentPaste, contentDescription = null) },
+            modifier = Modifier.clickable(onClick = onTextImport),
+        )
+        ListItem(
+            headlineContent = { Text("截图识别") },
+            supportingContent = { Text("即将支持") },
+            leadingContent = { Icon(Icons.Default.ImageSearch, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.ListItemDefaults.colors(
+                headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                leadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsScreen(
+    newTripsReminderEnabled: Boolean,
+    googleWalletActionVisible: Boolean,
+    themeMode: ThemeMode,
+    onBack: () -> Unit,
+    onNewTripsReminderChange: (Boolean) -> Unit,
+    onGoogleWalletVisibilityChange: (Boolean) -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("设置", onBack) },
+    ) { contentPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+        ) {
+            item {
+                SettingSwitch(
+                    title = "新行程默认提醒",
+                    description = "导入新行程时自动开启乘车提醒",
+                    checked = newTripsReminderEnabled,
+                    onCheckedChange = onNewTripsReminderChange,
+                )
+            }
+            item {
+                SettingSwitch(
+                    title = "显示 Google Wallet",
+                    description = "在行程详情中显示添加到 Google Wallet 的入口",
+                    checked = googleWalletActionVisible,
+                    onCheckedChange = onGoogleWalletVisibilityChange,
+                )
+            }
+            item {
+                Text(
+                    "外观",
+                    modifier = Modifier.padding(start = 24.dp, top = 28.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            items(ThemeMode.entries) { mode ->
+                val label = when (mode) {
+                    ThemeMode.SYSTEM -> "跟随系统"
+                    ThemeMode.LIGHT -> "浅色"
+                    ThemeMode.DARK -> "深色"
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onThemeModeChange(mode) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = themeMode == mode,
+                        onClick = { onThemeModeChange(mode) },
+                    )
+                    Text(label, modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                description,
+                modifier = Modifier.padding(top = 2.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PageTopBar(title: String, onBack: () -> Unit) {
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GmailImportScreen(
+    state: GmailImportState,
+    onBack: () -> Unit,
+    onSelect: (TravelDocument) -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("从 Gmail 导入", onBack) },
+    ) { contentPadding ->
+        when (state) {
+            GmailImportState.Idle,
+            GmailImportState.Authorizing,
+            GmailImportState.Loading,
+            -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text(
+                        if (state == GmailImportState.Loading) "正在查找购票邮件…" else "正在连接 Gmail…",
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                }
+            }
+
+            is GmailImportState.Error -> Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding)
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("无法导入邮件", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        state.message,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+                    )
+                    OutlinedButton(onClick = onBack) { Text("返回") }
+                }
+            }
+
+            is GmailImportState.Success -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (state.documents.isEmpty()) {
+                    item {
+                        Text(
+                            "最近两年没有找到可识别的购票成功邮件。",
+                            modifier = Modifier.padding(24.dp),
+                        )
+                    }
+                } else {
+                    items(state.documents) { document ->
+                        CompactTripCard(
+                            saved = SavedTravelDocument(document, false, false),
+                            onClick = { onSelect(document) },
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportScreen(
+    emailBody: String,
+    error: String?,
+    onBodyChange: (String) -> Unit,
+    onUseSample: (() -> Unit)?,
+    onBack: () -> Unit,
+    onParse: () -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("粘贴邮件正文", onBack) },
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+        ) {
+            Text("粘贴购票成功邮件的正文，解析后请核对乘车信息。")
+            OutlinedTextField(
+                value = emailBody,
+                onValueChange = onBodyChange,
+                label = { Text("邮件正文") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 280.dp)
+                    .padding(top = 20.dp),
+            )
+            if (onUseSample != null) {
+                TextButton(
+                    onClick = onUseSample,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("填入提醒测试数据")
+                }
+            }
+            error?.let {
+                Text(
+                    it,
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Button(
+                onClick = onParse,
+                enabled = emailBody.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp),
+            ) {
+                Text("解析邮件")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConfirmationScreen(
+    document: TravelDocument,
+    onBack: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("确认行程", onBack) },
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+        ) {
+            Text("请确认邮件中的信息是否识别正确。")
+            TripInformation(
+                document = document,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            Button(
+                onClick = onSave,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp),
+            ) {
+                Text("保存行程")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TripInformation(document: TravelDocument, modifier: Modifier = Modifier) {
+    val segment = document.segments.first()
+    val seat = segment.seatAssignments.firstOrNull()
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(segment.serviceNumber, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "${segment.origin.name} → ${segment.destination.name}",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            DetailRow("出发", segment.departureTime.format(DEPARTURE_FORMAT))
+            DetailRow("座位", seat?.let { "${it.section} 车 ${it.seat}" } ?: "待确认")
+            seat?.category?.let { DetailRow("席别", it) }
+            DetailRow("乘车人", document.travelers.joinToString("、") { it.name })
+            DetailRow("订单", document.reservation.reference)
+        }
+    }
+}
+
+@Composable
+private fun GoogleWalletButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .widthIn(min = 270.dp)
+            .height(49.dp)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.add_to_google_wallet_button_foreground),
+            contentDescription = "添加到 Google Wallet",
+            modifier = Modifier
+                .width(227.dp)
+                .height(26.dp),
+        )
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value)
+    }
+}
+
+private val DEPARTURE_FORMAT = DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日 HH:mm")
+private val COMPACT_DATE_FORMAT = DateTimeFormatter.ofPattern("M 月 d 日")
+private val COMPACT_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
+private val SAMPLE_EMAIL_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy年MM月dd日")
+private val SAMPLE_EMAIL_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy年MM月dd日HH:mm")
+private val SAMPLE_EMAIL_ORDER_FORMAT = DateTimeFormatter.ofPattern("MMddHHmm")
+private val SHANGHAI_ZONE: ZoneId = ZoneId.of("Asia/Shanghai")
+
+private fun createUpcomingReminderSample(): String {
+    val departure = ZonedDateTime.now(SHANGHAI_ZONE)
+        .plusHours(25)
+        .withSecond(0)
+        .withNano(0)
+    val reservationReference = "E9${departure.format(SAMPLE_EMAIL_ORDER_FORMAT)}"
+    return """
+        尊敬的 测试乘客先生：
+        您好！
+        您于${departure.minusDays(1).format(SAMPLE_EMAIL_DATE_FORMAT)}在中国铁路客户服务中心网站(12306.cn)成功购买了1张车票，票款共计120.00元，订单号码 $reservationReference。所购车票信息如下：
+        1.测试乘客，${departure.format(SAMPLE_EMAIL_DATE_TIME_FORMAT)}开，镇江站-上海站，G7229次列车，2车17C号，二等座，成人票，票价120.0元，电子客票。
+    """.trimIndent()
+}

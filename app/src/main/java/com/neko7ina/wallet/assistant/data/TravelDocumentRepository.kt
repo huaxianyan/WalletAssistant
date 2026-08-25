@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 data class SavedTravelDocument(
     val document: TravelDocument,
     val reminderEnabled: Boolean,
+    val archived: Boolean,
 )
 
 class TravelDocumentRepository(
@@ -20,9 +21,12 @@ class TravelDocumentRepository(
         ignoreUnknownKeys = true
     }
 
-    fun observeDocuments(): Flow<List<SavedTravelDocument>> = dao.observeAll().map { storedDocuments ->
+    fun observeDocuments(): Flow<List<SavedTravelDocument>> = dao.observeActive().map { storedDocuments ->
         storedDocuments.map(::decode)
     }
+
+    fun observeArchivedDocuments(): Flow<List<SavedTravelDocument>> =
+        dao.observeArchived().map { storedDocuments -> storedDocuments.map(::decode) }
 
     suspend fun save(
         document: TravelDocument,
@@ -30,10 +34,11 @@ class TravelDocumentRepository(
     ): SavedTravelDocument {
         val providerCode = document.provider.code
         val reservationReference = document.reservation.reference
-        val reminderEnabled = dao.findByReservation(
+        val existing = dao.findByReservation(
             providerCode = providerCode,
             reservationReference = reservationReference,
-        )?.reminderEnabled ?: defaultReminderEnabled
+        )
+        val reminderEnabled = existing?.reminderEnabled ?: defaultReminderEnabled
         val stored = StoredTravelDocument(
             id = document.stableId(),
             providerCode = providerCode,
@@ -44,6 +49,7 @@ class TravelDocumentRepository(
             payload = json.encodeToString(document),
             updatedAtEpochMillis = System.currentTimeMillis(),
             reminderEnabled = reminderEnabled,
+            archived = existing?.archived ?: false,
         )
         dao.upsert(stored)
         return decode(stored)
@@ -54,11 +60,17 @@ class TravelDocumentRepository(
         return dao.findById(id)?.let(::decode)
     }
 
+    suspend fun setArchived(id: String, archived: Boolean): SavedTravelDocument? {
+        dao.setArchived(id, archived)
+        return dao.findById(id)?.let(::decode)
+    }
+
     suspend fun getReminderEnabledDocuments(): List<TravelDocument> =
         dao.findReminderEnabled().map { decode(it).document }
 
     private fun decode(stored: StoredTravelDocument): SavedTravelDocument = SavedTravelDocument(
         document = json.decodeFromString(stored.payload),
         reminderEnabled = stored.reminderEnabled,
+        archived = stored.archived,
     )
 }

@@ -8,8 +8,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TravelDocumentDao {
-    @Query("SELECT * FROM travel_documents ORDER BY departureEpochMillis ASC")
-    fun observeAll(): Flow<List<StoredTravelDocument>>
+    @Query("SELECT * FROM travel_documents WHERE archived = 0 ORDER BY departureEpochMillis ASC")
+    fun observeActive(): Flow<List<StoredTravelDocument>>
+
+    @Query("SELECT * FROM travel_documents WHERE archived = 1 ORDER BY departureEpochMillis DESC")
+    fun observeArchived(): Flow<List<StoredTravelDocument>>
 
     @Query("SELECT * FROM travel_documents WHERE id = :id")
     suspend fun findById(id: String): StoredTravelDocument?
@@ -28,6 +31,12 @@ interface TravelDocumentDao {
 
     @Query("UPDATE travel_documents SET reminderEnabled = :enabled WHERE id = :id")
     suspend fun setReminderEnabled(id: String, enabled: Boolean)
+
+    @Query(
+        "UPDATE travel_documents SET archived = :archived, " +
+            "reminderEnabled = CASE WHEN :archived THEN 0 ELSE reminderEnabled END WHERE id = :id",
+    )
+    suspend fun setArchived(id: String, archived: Boolean)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(document: StoredTravelDocument)

@@ -12,8 +12,9 @@ import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
 import com.neko7ina.wallet.assistant.data.TravelWalletDatabase
 import com.neko7ina.wallet.assistant.gmail.GmailAccessException
 import com.neko7ina.wallet.assistant.gmail.GmailClient
-import com.neko7ina.wallet.assistant.reminder.ReminderPreferences
 import com.neko7ina.wallet.assistant.reminder.TripReminderScheduler
+import com.neko7ina.wallet.assistant.settings.AppPreferences
+import com.neko7ina.wallet.assistant.settings.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,16 +27,27 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     )
     private val gmailClient = GmailClient()
     private val railwayParser = ChinaRailwayEmailParser()
-    private val reminderPreferences = ReminderPreferences(application)
+    private val appPreferences = AppPreferences(application)
     private val reminderScheduler = TripReminderScheduler(application)
     private val mutableGmailImportState = MutableStateFlow<GmailImportState>(GmailImportState.Idle)
     private val mutableNewTripsReminderEnabled = MutableStateFlow(
-        reminderPreferences.newTripsEnabledByDefault,
+        appPreferences.newTripsReminderEnabled,
     )
+    private val mutableGoogleWalletActionVisible = MutableStateFlow(
+        appPreferences.googleWalletActionVisible,
+    )
+    private val mutableThemeMode = MutableStateFlow(appPreferences.themeMode)
 
     val gmailImportState = mutableGmailImportState.asStateFlow()
     val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
+    val googleWalletActionVisible = mutableGoogleWalletActionVisible.asStateFlow()
+    val themeMode = mutableThemeMode.asStateFlow()
     val documents = repository.observeDocuments().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList(),
+    )
+    val archivedDocuments = repository.observeArchivedDocuments().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList(),
@@ -79,15 +91,25 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             val saved = repository.save(
                 document = document,
-                defaultReminderEnabled = reminderPreferences.newTripsEnabledByDefault,
+                defaultReminderEnabled = appPreferences.newTripsReminderEnabled,
             )
             if (saved.reminderEnabled) reminderScheduler.schedule(saved.document)
         }
     }
 
     fun setNewTripsReminderEnabled(enabled: Boolean) {
-        reminderPreferences.newTripsEnabledByDefault = enabled
+        appPreferences.newTripsReminderEnabled = enabled
         mutableNewTripsReminderEnabled.value = enabled
+    }
+
+    fun setGoogleWalletActionVisible(visible: Boolean) {
+        appPreferences.googleWalletActionVisible = visible
+        mutableGoogleWalletActionVisible.value = visible
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        appPreferences.themeMode = mode
+        mutableThemeMode.value = mode
     }
 
     fun setReminderEnabled(saved: SavedTravelDocument, enabled: Boolean) {
@@ -98,6 +120,13 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
             } else {
                 reminderScheduler.cancel(updated.document.stableId())
             }
+        }
+    }
+
+    fun setArchived(saved: SavedTravelDocument, archived: Boolean) {
+        viewModelScope.launch {
+            repository.setArchived(saved.document.stableId(), archived) ?: return@launch
+            if (archived) reminderScheduler.cancel(saved.document.stableId())
         }
     }
 
