@@ -52,18 +52,24 @@ class TripReminderReceiver : BroadcastReceiver() {
         val seat = intent.getStringExtra(KEY_SEAT) ?: return
         val departure = intent.getStringExtra(KEY_DEPARTURE) ?: return
         val displayEnd = intent.getLongExtra(KEY_DISPLAY_END, 0L)
+        val title = if (kind == ReminderKind.LIVE) {
+            "$serviceNumber 即将发车"
+        } else {
+            "$serviceNumber 乘车提醒"
+        }
+        val seatDescription = seat.ifBlank { "待确认" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_china_railway_notification)
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
-            .setContentTitle(
-                if (kind == ReminderKind.LIVE) {
-                    "$serviceNumber 即将发车"
-                } else {
-                    "$serviceNumber 乘车提醒"
-                },
+            .setContentTitle(title)
+            .setContentText("$departure · $route")
+            .setStyle(
+                NotificationCompat.InboxStyle()
+                    .setBigContentTitle(title)
+                    .addLine("出发　$departure")
+                    .addLine("行程　$route")
+                    .addLine("座位　$seatDescription"),
             )
-            .setContentText("$departure，$route · $seat")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$departure，$route，$seat"))
             .setContentIntent(contentIntent(context, documentId))
             .setAutoCancel(kind == ReminderKind.STANDARD)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
