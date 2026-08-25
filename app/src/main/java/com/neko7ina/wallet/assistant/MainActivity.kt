@@ -15,9 +15,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
+import com.neko7ina.wallet.assistant.screenshot.ScreenshotTextRecognizer
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
@@ -29,7 +32,9 @@ class MainActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
     private val walletClient by lazy { Pay.getClient(this) }
     private val alarmManager by lazy { getSystemService(AlarmManager::class.java) }
+    private val screenshotTextRecognizer = ScreenshotTextRecognizer()
     private var gmailAuthorizationCallback: ((Result<String>) -> Unit)? = null
+    private var screenshotRecognitionCallback: ((ScreenshotRecognitionResult) -> Unit)? = null
     private var notificationPermissionCallback: ((Boolean) -> Unit)? = null
     private var exactReminderPermissionCallback: ((Boolean) -> Unit)? = null
 
@@ -46,6 +51,20 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         notificationPermissionCallback?.invoke(granted)
         notificationPermissionCallback = null
+    }
+    private val screenshotPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) {
+            deliverScreenshotRecognition(ScreenshotRecognitionResult.Cancelled)
+        } else {
+            screenshotRecognitionCallback?.invoke(ScreenshotRecognitionResult.Processing)
+            screenshotTextRecognizer.recognize(
+                context = this,
+                uri = uri,
+                onResult = ::deliverScreenshotRecognition,
+            )
+        }
     }
     private val gmailAuthorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -70,11 +89,17 @@ class MainActivity : ComponentActivity() {
                 requestGmailAuthorization = ::requestGmailAuthorization,
                 checkGoogleWalletAvailability = ::checkGoogleWalletAvailability,
                 addToGoogleWallet = ::addToGoogleWallet,
+                requestScreenshotRecognition = ::requestScreenshotRecognition,
                 requestNotificationPermission = ::requestNotificationPermission,
                 requestExactReminderPermission = ::requestExactReminderPermission,
                 setDarkSystemBars = ::setDarkSystemBars,
             )
         }
+    }
+
+    override fun onDestroy() {
+        screenshotTextRecognizer.close()
+        super.onDestroy()
     }
 
     @Deprecated("Google Wallet SDK reports save results through onActivityResult")
@@ -119,6 +144,20 @@ class MainActivity : ComponentActivity() {
 
     private fun addToGoogleWallet(unsignedPass: String) {
         walletClient.savePasses(unsignedPass, this, ADD_TO_GOOGLE_WALLET_REQUEST_CODE)
+    }
+
+    private fun requestScreenshotRecognition(
+        callback: (ScreenshotRecognitionResult) -> Unit,
+    ) {
+        screenshotRecognitionCallback = callback
+        screenshotPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
+
+    private fun deliverScreenshotRecognition(result: ScreenshotRecognitionResult) {
+        screenshotRecognitionCallback?.invoke(result)
+        screenshotRecognitionCallback = null
     }
 
     private fun requestExactReminderPermission(callback: (Boolean) -> Unit) {

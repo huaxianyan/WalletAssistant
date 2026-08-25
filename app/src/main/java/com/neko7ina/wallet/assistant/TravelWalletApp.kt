@@ -92,6 +92,7 @@ import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
+import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
 import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
 import com.neko7ina.wallet.assistant.settings.ThemeMode
 import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
@@ -107,7 +108,13 @@ private enum class Screen {
     SETTINGS,
     GMAIL_IMPORT,
     TEXT_IMPORT,
+    SCREENSHOT_IMPORT,
     CONFIRM,
+}
+
+private enum class ImportMode {
+    EMAIL,
+    SCREENSHOT,
 }
 
 private val Screen.depth: Int
@@ -129,6 +136,7 @@ fun TravelWalletApp(
     requestGmailAuthorization: ((Result<String>) -> Unit) -> Unit,
     checkGoogleWalletAvailability: ((Boolean) -> Unit) -> Unit,
     addToGoogleWallet: (String) -> Unit,
+    requestScreenshotRecognition: ((ScreenshotRecognitionResult) -> Unit) -> Unit,
     requestNotificationPermission: ((Boolean) -> Unit) -> Unit,
     requestExactReminderPermission: ((Boolean) -> Unit) -> Unit,
     setDarkSystemBars: (Boolean) -> Unit,
@@ -146,6 +154,7 @@ fun TravelWalletApp(
     val gmailImportState by viewModel.gmailImportState.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var emailBody by rememberSaveable { mutableStateOf("") }
+    var importMode by rememberSaveable { mutableStateOf(ImportMode.EMAIL) }
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
     var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
     var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
@@ -274,13 +283,14 @@ fun TravelWalletApp(
                 )
 
                 Screen.TEXT_IMPORT -> ImportScreen(
+                    importMode = importMode,
                     emailBody = emailBody,
                     error = parseError,
                     onBodyChange = {
                         emailBody = it
                         parseError = null
                     },
-                    onUseSample = if (BuildConfig.DEBUG) {
+                    onUseSample = if (BuildConfig.DEBUG && importMode == ImportMode.EMAIL) {
                         {
                             emailBody = createUpcomingReminderSample()
                             parseError = null
@@ -308,6 +318,10 @@ fun TravelWalletApp(
                     },
                 )
 
+                Screen.SCREENSHOT_IMPORT -> ScreenshotImportScreen(
+                    onBack = { screen = Screen.HOME },
+                )
+
                 Screen.CONFIRM -> ConfirmationScreen(
                     document = requireNotNull(parsedDocument),
                     onBack = { screen = confirmationSource },
@@ -329,9 +343,36 @@ fun TravelWalletApp(
                 },
                 onTextImport = {
                     showAddSheet = false
+                    importMode = ImportMode.EMAIL
                     emailBody = ""
                     parseError = null
                     screen = Screen.TEXT_IMPORT
+                },
+                onScreenshotImport = {
+                    showAddSheet = false
+                    requestScreenshotRecognition { result ->
+                        when (result) {
+                            ScreenshotRecognitionResult.Processing -> {
+                                screen = Screen.SCREENSHOT_IMPORT
+                            }
+                            is ScreenshotRecognitionResult.Success -> {
+                                if (screen != Screen.SCREENSHOT_IMPORT) return@requestScreenshotRecognition
+                                importMode = ImportMode.SCREENSHOT
+                                emailBody = result.text
+                                parseError = null
+                                screen = Screen.TEXT_IMPORT
+                            }
+                            ScreenshotRecognitionResult.Cancelled -> screen = Screen.HOME
+                            ScreenshotRecognitionResult.Failed -> {
+                                screen = Screen.HOME
+                                Toast.makeText(
+                                    context,
+                                    "未能读取截图，请重新选择清晰图片或改用粘贴正文。",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    }
                 },
             )
         }
@@ -697,6 +738,7 @@ private fun AddTripSheet(
     onDismiss: () -> Unit,
     onGmailImport: () -> Unit,
     onTextImport: () -> Unit,
+    onScreenshotImport: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
@@ -717,15 +759,10 @@ private fun AddTripSheet(
             modifier = Modifier.clickable(onClick = onTextImport),
         )
         ListItem(
-            headlineContent = { Text("截图识别") },
-            supportingContent = { Text("即将支持") },
+            headlineContent = { Text("从截图识别") },
+            supportingContent = { Text("选择图片并在设备上读取文字") },
             leadingContent = { Icon(Icons.Default.ImageSearch, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth(),
-            colors = androidx.compose.material3.ListItemDefaults.colors(
-                headlineColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                supportingColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                leadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ),
+            modifier = Modifier.clickable(onClick = onScreenshotImport),
         )
         Spacer(Modifier.height(24.dp))
     }
@@ -1023,7 +1060,32 @@ private fun GmailImportScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun ScreenshotImportScreen(onBack: () -> Unit) {
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("截图识别", onBack) },
+    ) { contentPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Text(
+                    "正在读取截图…",
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun ImportScreen(
+    importMode: ImportMode,
     emailBody: String,
     error: String?,
     onBodyChange: (String) -> Unit,
@@ -1033,7 +1095,12 @@ private fun ImportScreen(
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = { PageTopBar("粘贴邮件正文", onBack) },
+        topBar = {
+            PageTopBar(
+                if (importMode == ImportMode.SCREENSHOT) "检查识别文字" else "粘贴邮件正文",
+                onBack,
+            )
+        },
     ) { contentPadding ->
         Column(
             modifier = Modifier
@@ -1042,11 +1109,19 @@ private fun ImportScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
         ) {
-            Text("粘贴购票成功邮件的正文，解析后请核对乘车信息。")
+            Text(
+                if (importMode == ImportMode.SCREENSHOT) {
+                    "请检查截图中读取出的文字，修正错误后再识别行程。"
+                } else {
+                    "粘贴购票成功邮件的正文，解析后请核对乘车信息。"
+                },
+            )
             OutlinedTextField(
                 value = emailBody,
                 onValueChange = onBodyChange,
-                label = { Text("邮件正文") },
+                label = {
+                    Text(if (importMode == ImportMode.SCREENSHOT) "识别文字" else "邮件正文")
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 280.dp)
@@ -1074,7 +1149,7 @@ private fun ImportScreen(
                     .fillMaxWidth()
                     .padding(top = 24.dp),
             ) {
-                Text("解析邮件")
+                Text(if (importMode == ImportMode.SCREENSHOT) "识别行程" else "解析邮件")
             }
         }
     }

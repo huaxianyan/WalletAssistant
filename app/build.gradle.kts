@@ -99,6 +99,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.play.services.auth)
     implementation(libs.play.services.pay)
     ksp(libs.androidx.room.compiler)
