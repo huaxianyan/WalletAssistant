@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
         when (resultCode) {
             Activity.RESULT_OK -> Toast.makeText(
                 this,
-                "已添加到 Google Wallet",
+                "已添加至 Google Wallet",
                 Toast.LENGTH_SHORT,
             ).show()
 

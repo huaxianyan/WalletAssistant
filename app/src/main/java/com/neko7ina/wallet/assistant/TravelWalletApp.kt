@@ -1,7 +1,17 @@
 package com.neko7ina.wallet.assistant
 
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +63,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +75,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -130,6 +144,12 @@ fun TravelWalletApp(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+    val colorScheme = when {
+        Build.VERSION.SDK_INT >= 31 && useDarkTheme -> dynamicDarkColorScheme(context)
+        Build.VERSION.SDK_INT >= 31 -> dynamicLightColorScheme(context)
+        useDarkTheme -> darkColorScheme()
+        else -> lightColorScheme()
+    }
 
     fun changeReminder(enabled: Boolean, apply: () -> Unit) {
         if (!enabled) {
@@ -171,9 +191,21 @@ fun TravelWalletApp(
         }
     }
 
-    MaterialTheme(colorScheme = if (useDarkTheme) darkColorScheme() else lightColorScheme()) {
+    BackHandler(enabled = screen != Screen.HOME) {
+        screen = if (screen == Screen.CONFIRM) confirmationSource else Screen.HOME
+    }
+
+    MaterialTheme(colorScheme = colorScheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            when (screen) {
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = {
+                    (fadeIn() + slideInHorizontally { width -> width / 12 }) togetherWith
+                        (fadeOut() + slideOutHorizontally { width -> -width / 12 })
+                },
+                label = "page transition",
+            ) { targetScreen ->
+                when (targetScreen) {
                 Screen.HOME -> HomeScreen(
                     documents = documents,
                     onTripClick = { selectedTrip = it },
@@ -248,6 +280,7 @@ fun TravelWalletApp(
                         screen = Screen.HOME
                     },
                 )
+                }
             }
         }
 
@@ -682,7 +715,7 @@ private fun SettingsScreen(
             item {
                 SettingSwitch(
                     title = "显示 Google Wallet",
-                    description = "在行程详情中显示添加到 Google Wallet 的入口",
+                    description = "在行程详情中显示添加至 Google Wallet 的入口",
                     checked = googleWalletActionVisible,
                     onCheckedChange = onGoogleWalletVisibilityChange,
                 )
@@ -951,16 +984,21 @@ private fun GoogleWalletButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shape = RoundedCornerShape(4.dp)
     Box(
         modifier = modifier
+            .padding(8.dp)
             .widthIn(min = 270.dp)
             .height(49.dp)
+            .clip(shape)
+            .background(Color.Black)
+            .border(1.dp, Color(0xFF5F6368), shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(R.drawable.add_to_google_wallet_button_foreground),
-            contentDescription = "添加到 Google Wallet",
+            contentDescription = "添加至 Google Wallet",
             modifier = Modifier
                 .width(227.dp)
                 .height(26.dp),
