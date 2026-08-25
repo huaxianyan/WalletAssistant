@@ -39,7 +39,7 @@ class GoogleWalletPassFactory {
                                 putJsonArray("cardRowTemplateInfos") {
                                     add(twoItemRow("origin", "destination"))
                                     add(twoItemRow("departure_date", "departure_time"))
-                                    add(twoItemRow("train_number", "seat"))
+                                    add(twoItemRow("seat", "traveler"))
                                 }
                             }
                         }
@@ -51,15 +51,13 @@ class GoogleWalletPassFactory {
                         put("classId", classId)
                         put("state", "ACTIVE")
                         put("genericType", "GENERIC_TYPE_UNSPECIFIED")
-                        put("hexBackgroundColor", "#1A73E8")
-                        put("cardTitle", localized("铁路行程"))
+                        put("hexBackgroundColor", "#6F7378")
+                        put("cardTitle", localized("中国铁路"))
                         put(
                             "header",
-                            localized(
-                                "${segment.serviceNumber} ${segment.origin.name} → ${segment.destination.name}",
-                            ),
+                            localized("${segment.origin.name} → ${segment.destination.name}"),
                         )
-                        put("subheader", localized(document.travelers.first().name))
+                        put("subheader", localized(segment.serviceNumber))
                         putJsonObject("validTimeInterval") {
                             putJsonObject("start") {
                                 put(
@@ -87,7 +85,6 @@ class GoogleWalletPassFactory {
                                 "出发时间",
                                 segment.departureTime.format(DEPARTURE_TIME_FORMAT),
                             )
-                            addTextModule("train_number", "列车号", segment.serviceNumber)
                             addTextModule("seat", "座位", "${seat.section} 车 ${seat.seat}")
                             addTextModule("seat_class", "席别", seat.category)
                             addTextModule("traveler", "乘车人", document.travelers.first().name)
