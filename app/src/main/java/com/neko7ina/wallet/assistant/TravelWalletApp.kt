@@ -96,6 +96,7 @@ import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.random.Random
 
 private enum class Screen {
     HOME,
@@ -105,6 +106,13 @@ private enum class Screen {
     TEXT_IMPORT,
     CONFIRM,
 }
+
+private val Screen.depth: Int
+    get() = when (this) {
+        Screen.HOME -> 0
+        Screen.CONFIRM -> 2
+        else -> 1
+    }
 
 private enum class WalletAvailability {
     CHECKING,
@@ -200,8 +208,13 @@ fun TravelWalletApp(
             AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    (fadeIn() + slideInHorizontally { width -> width / 12 }) togetherWith
-                        (fadeOut() + slideOutHorizontally { width -> -width / 12 })
+                    if (targetState.depth > initialState.depth) {
+                        (fadeIn() + slideInHorizontally { width -> width / 3 }) togetherWith
+                            (fadeOut() + slideOutHorizontally { width -> -width / 3 })
+                    } else {
+                        (fadeIn() + slideInHorizontally { width -> -width / 3 }) togetherWith
+                            (fadeOut() + slideOutHorizontally { width -> width / 3 })
+                    }
                 },
                 label = "page transition",
             ) { targetScreen ->
@@ -1024,19 +1037,35 @@ private val COMPACT_DATE_FORMAT = DateTimeFormatter.ofPattern("M 月 d 日")
 private val COMPACT_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
 private val SAMPLE_EMAIL_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy年MM月dd日")
 private val SAMPLE_EMAIL_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy年MM月dd日HH:mm")
-private val SAMPLE_EMAIL_ORDER_FORMAT = DateTimeFormatter.ofPattern("MMddHHmm")
 private val SHANGHAI_ZONE: ZoneId = ZoneId.of("Asia/Shanghai")
+private val TEST_STATION_NAMES = listOf(
+    "苹果站",
+    "香蕉站",
+    "橙子站",
+    "葡萄站",
+    "芒果站",
+    "桃子站",
+    "草莓站",
+    "西瓜站",
+)
+private val TEST_SEAT_LETTERS = charArrayOf('A', 'B', 'C', 'D', 'F')
 
 private fun createUpcomingReminderSample(): String {
-    val departure = ZonedDateTime.now(SHANGHAI_ZONE)
-        .plusHours(25)
+    val now = ZonedDateTime.now(SHANGHAI_ZONE)
+    val departure = now
+        .plusMinutes(Random.nextLong(24 * 60L, 48 * 60L + 1))
         .withSecond(0)
         .withNano(0)
-    val reservationReference = "E9${departure.format(SAMPLE_EMAIL_ORDER_FORMAT)}"
+    val origin = TEST_STATION_NAMES.random()
+    val destination = TEST_STATION_NAMES.filterNot { it == origin }.random()
+    val serviceNumber = "G${Random.nextInt(1_000, 10_000)}"
+    val carriage = Random.nextInt(1, 13)
+    val seat = "${Random.nextInt(1, 25)}${TEST_SEAT_LETTERS.random()}"
+    val reservationReference = "E${Random.nextLong(100_000_000L, 1_000_000_000L)}"
     return """
         尊敬的 测试乘客先生：
         您好！
-        您于${departure.minusDays(1).format(SAMPLE_EMAIL_DATE_FORMAT)}在中国铁路客户服务中心网站(12306.cn)成功购买了1张车票，票款共计120.00元，订单号码 $reservationReference。所购车票信息如下：
-        1.测试乘客，${departure.format(SAMPLE_EMAIL_DATE_TIME_FORMAT)}开，镇江站-上海站，G7229次列车，2车17C号，二等座，成人票，票价120.0元，电子客票。
+        您于${now.format(SAMPLE_EMAIL_DATE_FORMAT)}在中国铁路客户服务中心网站(12306.cn)成功购买了1张车票，票款共计120.00元，订单号码 $reservationReference。所购车票信息如下：
+        1.测试乘客，${departure.format(SAMPLE_EMAIL_DATE_TIME_FORMAT)}开，$origin-$destination，${serviceNumber}次列车，${carriage}车${seat}号，二等座，成人票，票价120.0元，电子客票。
     """.trimIndent()
 }
