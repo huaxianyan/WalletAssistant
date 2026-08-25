@@ -566,7 +566,7 @@ private fun TripDetailDialog(
     val document = saved.document
     val segment = document.segments.first()
     val seat = segment.seatAssignments.firstOrNull()
-    val canArchive = document.hasDeparted()
+    val hasDeparted = document.hasDeparted()
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -611,7 +611,7 @@ private fun TripDetailDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("乘车提醒", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                if (canArchive) {
+                                if (hasDeparted) {
                                     "行程已结束，无法开启提醒"
                                 } else {
                                     "发车前 ${formatLeadTime(departureReminderMinutes)}提醒，" +
@@ -622,14 +622,14 @@ private fun TripDetailDialog(
                             )
                         }
                         Switch(
-                            checked = saved.reminderEnabled && !canArchive,
+                            checked = saved.reminderEnabled && !hasDeparted,
                             onCheckedChange = onReminderChange,
-                            enabled = !canArchive,
+                            enabled = !hasDeparted,
                         )
                     }
                 }
 
-                if (onTestReminder != null && !canArchive) {
+                if (onTestReminder != null && !hasDeparted) {
                     TextButton(
                         onClick = onTestReminder,
                         modifier = Modifier.align(Alignment.End),
@@ -666,7 +666,7 @@ private fun TripDetailDialog(
                     ) {
                         Text("恢复到我的行程")
                     }
-                } else if (canArchive) {
+                } else {
                     OutlinedButton(
                         onClick = onArchive,
                         modifier = Modifier
