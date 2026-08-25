@@ -16,6 +16,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.neko7ina.wallet.assistant.MainActivity
 import com.neko7ina.wallet.assistant.R
+import com.neko7ina.wallet.assistant.archive.TripAutoArchiveScheduler
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
@@ -91,6 +92,7 @@ class TripReminderReceiver : BroadcastReceiver() {
                 )
                 val scheduler = TripReminderScheduler(context)
                 repository.getReminderEnabledDocuments().forEach(scheduler::schedule)
+                TripAutoArchiveScheduler(context).reconcile()
             } finally {
                 pendingResult.finish()
             }

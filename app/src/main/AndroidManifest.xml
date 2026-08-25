@@ -12,6 +12,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TravelWallet">
         <receiver
+            android:name=".archive.TripAutoArchiveReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".reminder.TripReminderReceiver"
             android:exported="false">
             <intent-filter>

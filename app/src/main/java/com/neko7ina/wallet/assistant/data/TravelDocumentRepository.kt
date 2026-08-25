@@ -68,6 +68,11 @@ class TravelDocumentRepository(
     suspend fun getReminderEnabledDocuments(): List<TravelDocument> =
         dao.findReminderEnabled().map { decode(it).document }
 
+    suspend fun getActiveDocuments(): List<SavedTravelDocument> = dao.findActive().map(::decode)
+
+    suspend fun archiveIfDeparted(id: String, nowEpochMillis: Long): Boolean =
+        dao.archiveIfDeparted(id, nowEpochMillis) > 0
+
     private fun decode(stored: StoredTravelDocument): SavedTravelDocument = SavedTravelDocument(
         document = json.decodeFromString(stored.payload),
         reminderEnabled = stored.reminderEnabled,

@@ -138,6 +138,7 @@ fun TravelWalletApp(
     val archivedDocuments by viewModel.archivedDocuments.collectAsStateWithLifecycle()
     val newTripsReminderEnabled by viewModel.newTripsReminderEnabled.collectAsStateWithLifecycle()
     val ignoreDepartedTripsOnImport by viewModel.ignoreDepartedTripsOnImport.collectAsStateWithLifecycle()
+    val autoArchiveDepartedTrips by viewModel.autoArchiveDepartedTrips.collectAsStateWithLifecycle()
     val departureReminderMinutes by viewModel.departureReminderMinutes.collectAsStateWithLifecycle()
     val liveStatusMinutes by viewModel.liveStatusMinutes.collectAsStateWithLifecycle()
     val googleWalletActionVisible by viewModel.googleWalletActionVisible.collectAsStateWithLifecycle()
@@ -245,6 +246,7 @@ fun TravelWalletApp(
                 Screen.SETTINGS -> SettingsScreen(
                     newTripsReminderEnabled = newTripsReminderEnabled,
                     ignoreDepartedTripsOnImport = ignoreDepartedTripsOnImport,
+                    autoArchiveDepartedTrips = autoArchiveDepartedTrips,
                     departureReminderMinutes = departureReminderMinutes,
                     liveStatusMinutes = liveStatusMinutes,
                     googleWalletActionVisible = googleWalletActionVisible,
@@ -254,6 +256,7 @@ fun TravelWalletApp(
                         changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
                     },
                     onIgnoreDepartedTripsOnImportChange = viewModel::setIgnoreDepartedTripsOnImport,
+                    onAutoArchiveDepartedTripsChange = viewModel::setAutoArchiveDepartedTrips,
                     onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
                     onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
                     onGoogleWalletVisibilityChange = viewModel::setGoogleWalletActionVisible,
@@ -338,6 +341,7 @@ fun TravelWalletApp(
                 saved = saved,
                 walletAvailability = walletAvailability,
                 showGoogleWalletAction = googleWalletActionVisible,
+                autoArchiveDepartedTrips = autoArchiveDepartedTrips,
                 departureReminderMinutes = departureReminderMinutes,
                 liveStatusMinutes = liveStatusMinutes,
                 onDismiss = { selectedTripId = null },
@@ -554,6 +558,7 @@ private fun TripDetailDialog(
     saved: SavedTravelDocument,
     walletAvailability: WalletAvailability,
     showGoogleWalletAction: Boolean,
+    autoArchiveDepartedTrips: Boolean,
     departureReminderMinutes: Int,
     liveStatusMinutes: Int,
     onDismiss: () -> Unit,
@@ -658,13 +663,23 @@ private fun TripDetailDialog(
                 }
 
                 if (saved.archived) {
+                    val restoreBlocked = autoArchiveDepartedTrips && hasDeparted
                     OutlinedButton(
                         onClick = onRestore,
+                        enabled = !restoreBlocked,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 20.dp),
                     ) {
                         Text("恢复到我的行程")
+                    }
+                    if (restoreBlocked) {
+                        Text(
+                            "关闭自动归档后可恢复这趟行程",
+                            modifier = Modifier.padding(top = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 } else {
                     OutlinedButton(
@@ -733,6 +748,7 @@ private fun AddTripSheet(
 private fun SettingsScreen(
     newTripsReminderEnabled: Boolean,
     ignoreDepartedTripsOnImport: Boolean,
+    autoArchiveDepartedTrips: Boolean,
     departureReminderMinutes: Int,
     liveStatusMinutes: Int,
     googleWalletActionVisible: Boolean,
@@ -740,6 +756,7 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
     onIgnoreDepartedTripsOnImportChange: (Boolean) -> Unit,
+    onAutoArchiveDepartedTripsChange: (Boolean) -> Unit,
     onDepartureReminderMinutesChange: (Int) -> Unit,
     onLiveStatusMinutesChange: (Int) -> Unit,
     onGoogleWalletVisibilityChange: (Boolean) -> Unit,
@@ -767,6 +784,22 @@ private fun SettingsScreen(
                     description = "导入时跳过已经出发的行程",
                     checked = ignoreDepartedTripsOnImport,
                     onCheckedChange = onIgnoreDepartedTripsOnImportChange,
+                )
+            }
+            item {
+                Text(
+                    "行程管理",
+                    modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 4.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            item {
+                SettingSwitch(
+                    title = "自动归档已结束行程",
+                    description = "行程出发后移入已归档行程并关闭提醒",
+                    checked = autoArchiveDepartedTrips,
+                    onCheckedChange = onAutoArchiveDepartedTripsChange,
                 )
             }
             item {

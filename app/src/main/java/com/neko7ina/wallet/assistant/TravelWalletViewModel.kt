@@ -3,6 +3,7 @@ package com.neko7ina.wallet.assistant
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.neko7ina.wallet.assistant.archive.TripAutoArchiveScheduler
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
@@ -29,12 +30,16 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     private val railwayParser = ChinaRailwayEmailParser()
     private val appPreferences = AppPreferences(application)
     private val reminderScheduler = TripReminderScheduler(application)
+    private val autoArchiveScheduler = TripAutoArchiveScheduler(application)
     private val mutableGmailImportState = MutableStateFlow<GmailImportState>(GmailImportState.Idle)
     private val mutableNewTripsReminderEnabled = MutableStateFlow(
         appPreferences.newTripsReminderEnabled,
     )
     private val mutableIgnoreDepartedTripsOnImport = MutableStateFlow(
         appPreferences.ignoreDepartedTripsOnImport,
+    )
+    private val mutableAutoArchiveDepartedTrips = MutableStateFlow(
+        appPreferences.autoArchiveDepartedTrips,
     )
     private val mutableDepartureReminderMinutes = MutableStateFlow(
         appPreferences.departureReminderMinutes,
@@ -48,6 +53,7 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     val gmailImportState = mutableGmailImportState.asStateFlow()
     val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
     val ignoreDepartedTripsOnImport = mutableIgnoreDepartedTripsOnImport.asStateFlow()
+    val autoArchiveDepartedTrips = mutableAutoArchiveDepartedTrips.asStateFlow()
     val departureReminderMinutes = mutableDepartureReminderMinutes.asStateFlow()
     val liveStatusMinutes = mutableLiveStatusMinutes.asStateFlow()
     val googleWalletActionVisible = mutableGoogleWalletActionVisible.asStateFlow()
@@ -62,6 +68,10 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList(),
     )
+
+    init {
+        viewModelScope.launch { autoArchiveScheduler.reconcile() }
+    }
 
     fun beginGmailAuthorization() {
         mutableGmailImportState.value = GmailImportState.Authorizing
@@ -106,6 +116,7 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
                 defaultReminderEnabled = appPreferences.newTripsReminderEnabled,
             )
             if (saved.reminderEnabled) reminderScheduler.schedule(saved.document)
+            autoArchiveScheduler.scheduleOrArchive(saved)
         }
     }
 
@@ -117,6 +128,12 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     fun setIgnoreDepartedTripsOnImport(ignore: Boolean) {
         appPreferences.ignoreDepartedTripsOnImport = ignore
         mutableIgnoreDepartedTripsOnImport.value = ignore
+    }
+
+    fun setAutoArchiveDepartedTrips(enabled: Boolean) {
+        appPreferences.autoArchiveDepartedTrips = enabled
+        mutableAutoArchiveDepartedTrips.value = enabled
+        viewModelScope.launch { autoArchiveScheduler.reconcile() }
     }
 
     fun setDepartureReminderMinutes(minutes: Int) {
@@ -154,8 +171,14 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun setArchived(saved: SavedTravelDocument, archived: Boolean) {
         viewModelScope.launch {
-            repository.setArchived(saved.document.stableId(), archived) ?: return@launch
-            if (archived) reminderScheduler.cancel(saved.document.stableId())
+            val documentId = saved.document.stableId()
+            val updated = repository.setArchived(documentId, archived) ?: return@launch
+            if (archived) {
+                reminderScheduler.cancel(documentId)
+                autoArchiveScheduler.cancel(documentId)
+            } else {
+                autoArchiveScheduler.scheduleOrArchive(updated)
+            }
         }
     }
 
