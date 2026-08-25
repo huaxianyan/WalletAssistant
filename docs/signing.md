@@ -28,6 +28,7 @@ Release KeyStore 和密码不进入 Git。完整恢复包保存在：
    wallet-assistant-release.p12
    signing.properties
    certificate.txt
+   wallet.properties
    RECOVERY.txt
    ```
 
@@ -39,4 +40,4 @@ Release KeyStore 和密码不进入 Git。完整恢复包保存在：
 
 4. 使用 Android SDK 的 `apksigner verify --print-certs` 核对 Release APK 的证书摘要与 `certificate.txt`。
 
-`signing.properties` 和 KeyStore 都属于发布凭据，不得提交到仓库、Issue、Release 附件或构建日志。
+`signing.properties`、`wallet.properties` 和 KeyStore 不得提交到仓库、Issue、Release 附件或构建日志。`wallet.properties` 同时恢复 Google Wallet Issuer 构建配置。

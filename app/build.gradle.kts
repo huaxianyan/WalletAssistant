@@ -16,6 +16,15 @@ val signingProperties = Properties().apply {
         signingPropertiesFile.inputStream().use(::load)
     }
 }
+val walletPropertiesFile = file(
+    "${System.getProperty("user.home")}/.android/signing/WalletAssistant/wallet.properties",
+)
+check(walletPropertiesFile.exists()) {
+    "Missing Google Wallet configuration: $walletPropertiesFile"
+}
+val walletProperties = Properties().apply {
+    walletPropertiesFile.inputStream().use(::load)
+}
 
 android {
     namespace = "com.neko7ina.wallet.assistant"
@@ -27,6 +36,21 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField(
+            "String",
+            "WALLET_ISSUER_ID",
+            "\"${walletProperties.getProperty("issuerId")}\"",
+        )
+        buildConfigField(
+            "String",
+            "WALLET_ISSUER_OWNER_EMAIL",
+            "\"${walletProperties.getProperty("issuerOwnerEmail")}\"",
+        )
+        buildConfigField(
+            "String",
+            "WALLET_CLASS_SUFFIX",
+            "\"${walletProperties.getProperty("classSuffix")}\"",
+        )
     }
 
     signingConfigs {
@@ -49,6 +73,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }
@@ -73,6 +98,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.auth)
+    implementation(libs.play.services.pay)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

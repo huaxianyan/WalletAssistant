@@ -1,8 +1,7 @@
 package com.neko7ina.wallet.assistant.data
 
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
-import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
+import com.neko7ina.wallet.assistant.core.model.stableId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -25,7 +24,7 @@ class TravelDocumentRepository(
         val reservationReference = document.reservation.reference
         dao.upsert(
             StoredTravelDocument(
-                id = stableId(providerCode, reservationReference),
+                id = document.stableId(),
                 providerCode = providerCode,
                 reservationReference = reservationReference,
                 departureEpochMillis = document.segments.minOf { it.departureTime.toInstant().toEpochMilli() },
@@ -35,10 +34,4 @@ class TravelDocumentRepository(
         )
     }
 
-    private fun stableId(providerCode: String, reservationReference: String): String {
-        val source = "$providerCode\u0000$reservationReference"
-        return MessageDigest.getInstance("SHA-256")
-            .digest(source.toByteArray(StandardCharsets.UTF_8))
-            .joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
 }

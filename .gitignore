@@ -4,6 +4,7 @@
 *.iml
 local.properties
 signing.properties
+wallet.properties
 *.jks
 *.keystore
 *.p12

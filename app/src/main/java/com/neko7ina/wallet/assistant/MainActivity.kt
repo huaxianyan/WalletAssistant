@@ -1,18 +1,28 @@
 package com.neko7ina.wallet.assistant
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -25,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,21 +43,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
+import com.google.android.gms.pay.Pay
+import com.google.android.gms.pay.PayApiAvailabilityStatus
+import com.google.android.gms.pay.PayClient
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
+import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
+    private val walletClient by lazy { Pay.getClient(this) }
     private var gmailAuthorizationCallback: ((Result<String>) -> Unit)? = null
     private val gmailAuthorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult(),
@@ -66,8 +85,59 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            TravelWalletApp(requestGmailAuthorization = ::requestGmailAuthorization)
+            TravelWalletApp(
+                requestGmailAuthorization = ::requestGmailAuthorization,
+                checkGoogleWalletAvailability = ::checkGoogleWalletAvailability,
+                addToGoogleWallet = ::addToGoogleWallet,
+            )
         }
+    }
+
+    @Deprecated("Google Wallet SDK reports save results through onActivityResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != ADD_TO_GOOGLE_WALLET_REQUEST_CODE) return
+
+        when (resultCode) {
+            Activity.RESULT_OK -> Toast.makeText(
+                this,
+                "已添加到 Google Wallet",
+                Toast.LENGTH_SHORT,
+            ).show()
+
+            Activity.RESULT_CANCELED -> Unit
+            PayClient.SavePassesResult.SAVE_ERROR -> {
+                Log.e(
+                    "GoogleWallet",
+                    data?.getStringExtra(PayClient.EXTRA_API_ERROR_MESSAGE) ?: "Unknown save error",
+                )
+                Toast.makeText(
+                    this,
+                    "暂时无法添加，请稍后重试。",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+
+            else -> Toast.makeText(
+                this,
+                "暂时无法添加，请稍后重试。",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    private fun checkGoogleWalletAvailability(callback: (Boolean) -> Unit) {
+        walletClient.getPayApiAvailabilityStatus(PayClient.RequestType.SAVE_PASSES)
+            .addOnSuccessListener { status ->
+                callback(status == PayApiAvailabilityStatus.AVAILABLE)
+            }
+            .addOnFailureListener {
+                callback(false)
+            }
+    }
+
+    private fun addToGoogleWallet(unsignedPass: String) {
+        walletClient.savePasses(unsignedPass, this, ADD_TO_GOOGLE_WALLET_REQUEST_CODE)
     }
 
     private fun requestGmailAuthorization(callback: (Result<String>) -> Unit) {
@@ -107,7 +177,14 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+        const val ADD_TO_GOOGLE_WALLET_REQUEST_CODE = 1000
     }
+}
+
+private enum class WalletAvailability {
+    CHECKING,
+    AVAILABLE,
+    UNAVAILABLE,
 }
 
 private enum class Screen {
@@ -120,6 +197,8 @@ private enum class Screen {
 @Composable
 private fun TravelWalletApp(
     requestGmailAuthorization: ((Result<String>) -> Unit) -> Unit,
+    checkGoogleWalletAvailability: ((Boolean) -> Unit) -> Unit,
+    addToGoogleWallet: (String) -> Unit,
     viewModel: TravelWalletViewModel = viewModel(),
 ) {
     val savedDocuments by viewModel.documents.collectAsStateWithLifecycle()
@@ -129,6 +208,18 @@ private fun TravelWalletApp(
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
     var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
     var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
+    var walletAvailability by remember { mutableStateOf(WalletAvailability.CHECKING) }
+    val walletPassFactory = remember { GoogleWalletPassFactory() }
+
+    LaunchedEffect(Unit) {
+        checkGoogleWalletAvailability { available ->
+            walletAvailability = if (available) {
+                WalletAvailability.AVAILABLE
+            } else {
+                WalletAvailability.UNAVAILABLE
+            }
+        }
+    }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -149,6 +240,10 @@ private fun TravelWalletApp(
                         emailBody = ""
                         parseError = null
                         screen = Screen.TEXT_IMPORT
+                    },
+                    walletAvailability = walletAvailability,
+                    onAddToGoogleWallet = { document ->
+                        addToGoogleWallet(walletPassFactory.createUnsignedPass(document))
                     },
                 )
 
@@ -206,6 +301,8 @@ private fun HomeScreen(
     documents: List<TravelDocument>,
     onGmailImport: () -> Unit,
     onTextImport: () -> Unit,
+    walletAvailability: WalletAvailability,
+    onAddToGoogleWallet: (TravelDocument) -> Unit,
 ) {
     if (documents.isEmpty()) {
         Column(
@@ -240,6 +337,8 @@ private fun HomeScreen(
                 TripCard(
                     document = document,
                     modifier = Modifier.padding(top = 24.dp),
+                    walletAvailability = walletAvailability,
+                    onAddToGoogleWallet = { onAddToGoogleWallet(document) },
                 )
             }
             Button(
@@ -445,6 +544,8 @@ private fun ConfirmationScreen(
 private fun TripCard(
     document: TravelDocument,
     modifier: Modifier = Modifier,
+    walletAvailability: WalletAvailability? = null,
+    onAddToGoogleWallet: (() -> Unit)? = null,
 ) {
     val segment = document.segments.first()
     val seat = segment.seatAssignments.first()
@@ -461,7 +562,49 @@ private fun TripCard(
             DetailRow("席别", seat.category)
             DetailRow("乘车人", document.travelers.first().name)
             DetailRow("订单", document.reservation.reference)
+            when (walletAvailability) {
+                WalletAvailability.AVAILABLE -> GoogleWalletButton(
+                    onClick = requireNotNull(onAddToGoogleWallet),
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 20.dp),
+                )
+
+                WalletAvailability.UNAVAILABLE -> Text(
+                    text = "请安装或更新 Google Wallet 后重试。",
+                    modifier = Modifier.padding(top = 16.dp),
+                    color = MaterialTheme.colorScheme.error,
+                )
+
+                WalletAvailability.CHECKING,
+                null,
+                -> Unit
+            }
         }
+    }
+}
+
+@Composable
+private fun GoogleWalletButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .widthIn(min = 270.dp)
+            .height(49.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF1F1F1F))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.add_to_google_wallet_button_foreground),
+            contentDescription = "添加到 Google Wallet",
+            modifier = Modifier
+                .width(227.dp)
+                .height(26.dp),
+        )
     }
 }
 
