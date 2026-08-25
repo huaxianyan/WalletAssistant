@@ -13,7 +13,7 @@
 - 自动归档只在未来行程越过出发时间时执行一次，不追溯此前已结束的行程；自动归档后手动恢复的行程不再次归档
 - Google Wallet 是可选导出目标，不承担主要提醒职责
 - 不保证第三方卡片一定显示在系统 At a Glance 区域
-- 正式 Android 包名为 `com.neko7ina.wallet.assistant`
+- 正式产品名称为「出行」，Android 包名保持为 `com.neko7ina.wallet.assistant`
 
 ## 实现原则
 
