@@ -49,22 +49,22 @@ class TripReminderScheduler(context: Context) {
             DEBUG_STANDARD_SUFFIX,
             document,
             ReminderKind.STANDARD,
-            now.plusSeconds(120),
+            now.plusSeconds(10),
         )
         scheduleAlarm(
             id,
             DEBUG_LIVE_SUFFIX,
             document,
             ReminderKind.LIVE,
-            now.plusSeconds(240),
-            displayEnd = now.plusSeconds(420),
+            now.plusSeconds(20),
+            displayEnd = now.plusSeconds(50),
         )
         scheduleAlarm(
             id,
             DEBUG_END_SUFFIX,
             document,
             ReminderKind.END,
-            now.plusSeconds(420),
+            now.plusSeconds(50),
         )
     }
 

@@ -351,7 +351,7 @@ fun TravelWalletApp(
                 onTestReminder = if (BuildConfig.DEBUG && saved.reminderEnabled) {
                     {
                         viewModel.scheduleReminderTest(saved.document)
-                        Toast.makeText(context, "测试提醒将在 2 分钟后显示。", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "测试提醒将在 10 秒后显示。", Toast.LENGTH_LONG).show()
                     }
                 } else {
                     null
