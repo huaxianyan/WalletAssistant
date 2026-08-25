@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+data class SavedTravelDocument(
+    val document: TravelDocument,
+    val reminderEnabled: Boolean,
+)
+
 class TravelDocumentRepository(
     private val dao: TravelDocumentDao,
 ) {
@@ -15,23 +20,42 @@ class TravelDocumentRepository(
         ignoreUnknownKeys = true
     }
 
-    fun observeDocuments(): Flow<List<TravelDocument>> = dao.observeAllPayloads().map { payloads ->
-        payloads.map(json::decodeFromString)
+    fun observeDocuments(): Flow<List<SavedTravelDocument>> = dao.observeAll().map { storedDocuments ->
+        storedDocuments.map(::decode)
     }
 
-    suspend fun save(document: TravelDocument) {
+    suspend fun save(
+        document: TravelDocument,
+        defaultReminderEnabled: Boolean,
+    ): SavedTravelDocument {
         val providerCode = document.provider.code
         val reservationReference = document.reservation.reference
-        dao.upsert(
-            StoredTravelDocument(
-                id = document.stableId(),
-                providerCode = providerCode,
-                reservationReference = reservationReference,
-                departureEpochMillis = document.segments.minOf { it.departureTime.toInstant().toEpochMilli() },
-                payload = json.encodeToString(document),
-                updatedAtEpochMillis = System.currentTimeMillis(),
-            ),
+        val reminderEnabled = dao.findByReservation(
+            providerCode = providerCode,
+            reservationReference = reservationReference,
+        )?.reminderEnabled ?: defaultReminderEnabled
+        val stored = StoredTravelDocument(
+            id = document.stableId(),
+            providerCode = providerCode,
+            reservationReference = reservationReference,
+            departureEpochMillis = document.segments.minOf {
+                it.departureTime.toInstant().toEpochMilli()
+            },
+            payload = json.encodeToString(document),
+            updatedAtEpochMillis = System.currentTimeMillis(),
+            reminderEnabled = reminderEnabled,
         )
+        dao.upsert(stored)
+        return decode(stored)
     }
 
+    suspend fun setReminderEnabled(id: String, enabled: Boolean): SavedTravelDocument? {
+        dao.setReminderEnabled(id, enabled)
+        return dao.findById(id)?.let(::decode)
+    }
+
+    private fun decode(stored: StoredTravelDocument): SavedTravelDocument = SavedTravelDocument(
+        document = json.decodeFromString(stored.payload),
+        reminderEnabled = stored.reminderEnabled,
+    )
 }

@@ -4,12 +4,16 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
+import com.neko7ina.wallet.assistant.data.SavedTravelDocument
 import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
 import com.neko7ina.wallet.assistant.data.TravelWalletDatabase
 import com.neko7ina.wallet.assistant.gmail.GmailAccessException
 import com.neko7ina.wallet.assistant.gmail.GmailClient
+import com.neko7ina.wallet.assistant.reminder.ReminderPreferences
+import com.neko7ina.wallet.assistant.reminder.TripReminderScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,9 +26,15 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     )
     private val gmailClient = GmailClient()
     private val railwayParser = ChinaRailwayEmailParser()
+    private val reminderPreferences = ReminderPreferences(application)
+    private val reminderScheduler = TripReminderScheduler(application)
     private val mutableGmailImportState = MutableStateFlow<GmailImportState>(GmailImportState.Idle)
+    private val mutableNewTripsReminderEnabled = MutableStateFlow(
+        reminderPreferences.newTripsEnabledByDefault,
+    )
 
     val gmailImportState = mutableGmailImportState.asStateFlow()
+    val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
     val documents = repository.observeDocuments().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -67,8 +77,32 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun save(document: TravelDocument) {
         viewModelScope.launch {
-            repository.save(document)
+            val saved = repository.save(
+                document = document,
+                defaultReminderEnabled = reminderPreferences.newTripsEnabledByDefault,
+            )
+            if (saved.reminderEnabled) reminderScheduler.schedule(saved.document)
         }
+    }
+
+    fun setNewTripsReminderEnabled(enabled: Boolean) {
+        reminderPreferences.newTripsEnabledByDefault = enabled
+        mutableNewTripsReminderEnabled.value = enabled
+    }
+
+    fun setReminderEnabled(saved: SavedTravelDocument, enabled: Boolean) {
+        viewModelScope.launch {
+            val updated = repository.setReminderEnabled(saved.document.stableId(), enabled) ?: return@launch
+            if (enabled) {
+                reminderScheduler.schedule(updated.document)
+            } else {
+                reminderScheduler.cancel(updated.document.stableId())
+            }
+        }
+    }
+
+    fun scheduleReminderTest(document: TravelDocument) {
+        reminderScheduler.scheduleDebugSequence(document)
     }
 
     private companion object {

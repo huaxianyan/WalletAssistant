@@ -1,5 +1,6 @@
 package com.neko7ina.wallet.assistant.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -20,4 +21,5 @@ data class StoredTravelDocument(
     val departureEpochMillis: Long,
     val payload: String,
     val updatedAtEpochMillis: Long,
+    @ColumnInfo(defaultValue = "0") val reminderEnabled: Boolean = false,
 )

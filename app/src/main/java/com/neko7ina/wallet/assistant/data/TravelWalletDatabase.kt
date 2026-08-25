@@ -4,16 +4,27 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredTravelDocument::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class TravelWalletDatabase : RoomDatabase() {
     abstract fun travelDocumentDao(): TravelDocumentDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE travel_documents " +
+                        "ADD COLUMN reminderEnabled INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         @Volatile
         private var instance: TravelWalletDatabase? = null
 
@@ -22,7 +33,9 @@ abstract class TravelWalletDatabase : RoomDatabase() {
                 context.applicationContext,
                 TravelWalletDatabase::class.java,
                 "travel-wallet.db",
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2)
+                .build()
+                .also { instance = it }
         }
     }
 }
