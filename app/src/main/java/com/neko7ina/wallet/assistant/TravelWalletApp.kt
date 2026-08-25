@@ -37,10 +37,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +61,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +71,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -242,6 +247,7 @@ fun TravelWalletApp(
                 Screen.HOME -> HomeScreen(
                     documents = documents,
                     onTripClick = { selectedTripId = it.document.stableId() },
+                    onSwipeArchive = { viewModel.setArchived(it, true) },
                     onAddClick = { showAddSheet = true },
                     onArchiveClick = { screen = Screen.ARCHIVE },
                     onSettingsClick = { screen = Screen.SETTINGS },
@@ -419,6 +425,10 @@ fun TravelWalletApp(
                     viewModel.setArchived(saved, false)
                     selectedTripId = null
                 },
+                onDelete = {
+                    viewModel.delete(saved)
+                    selectedTripId = null
+                },
             )
         }
     }
@@ -429,6 +439,7 @@ fun TravelWalletApp(
 private fun HomeScreen(
     documents: List<SavedTravelDocument>,
     onTripClick: (SavedTravelDocument) -> Unit,
+    onSwipeArchive: (SavedTravelDocument) -> Unit,
     onAddClick: () -> Unit,
     onArchiveClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -500,9 +511,10 @@ private fun HomeScreen(
             ) {
                 item { Spacer(Modifier.height(4.dp)) }
                 items(documents, key = { it.document.stableId() }) { saved ->
-                    CompactTripCard(
+                    SwipeToArchiveTripCard(
                         saved = saved,
                         onClick = { onTripClick(saved) },
+                        onArchive = { onSwipeArchive(saved) },
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
@@ -549,6 +561,49 @@ private fun ArchiveScreen(
                 item { Spacer(Modifier.height(16.dp)) }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToArchiveTripCard(
+    saved: SavedTravelDocument,
+    onClick: () -> Unit,
+    onArchive: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onArchive()
+                true
+            } else {
+                false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(end = 24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    Icons.Default.Archive,
+                    contentDescription = "归档行程",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        },
+        modifier = modifier,
+        enableDismissFromStartToEnd = false,
+    ) {
+        CompactTripCard(saved = saved, onClick = onClick)
     }
 }
 
@@ -618,11 +673,13 @@ private fun TripDetailDialog(
     onAddToGoogleWallet: () -> Unit,
     onArchive: () -> Unit,
     onRestore: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val document = saved.document
     val segment = document.segments.first()
     val seat = segment.seatAssignments.firstOrNull()
     val hasDeparted = document.hasDeparted()
+    var showDeleteConfirmation by remember(saved.document.stableId()) { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -733,14 +790,38 @@ private fun TripDetailDialog(
                     }
                 }
 
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("关闭")
+                    TextButton(onClick = { showDeleteConfirmation = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Text("删除行程", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text("关闭")
+                    }
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("删除这趟行程？") },
+            text = { Text("删除后，如需再次查看，需要重新导入行程。") },
+            confirmButton = {
+                TextButton(onClick = onDelete) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
 

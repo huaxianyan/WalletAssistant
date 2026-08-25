@@ -182,6 +182,15 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun delete(saved: SavedTravelDocument) {
+        viewModelScope.launch {
+            val documentId = saved.document.stableId()
+            reminderScheduler.cancel(documentId)
+            autoArchiveScheduler.cancel(documentId)
+            repository.delete(documentId)
+        }
+    }
+
     fun scheduleReminderTest(document: TravelDocument) {
         reminderScheduler.scheduleDebugSequence(document)
     }

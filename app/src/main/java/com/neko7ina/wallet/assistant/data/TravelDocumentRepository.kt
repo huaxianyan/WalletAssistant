@@ -65,6 +65,10 @@ class TravelDocumentRepository(
         return dao.findById(id)?.let(::decode)
     }
 
+    suspend fun delete(id: String) {
+        dao.deleteById(id)
+    }
+
     suspend fun getReminderEnabledDocuments(): List<TravelDocument> =
         dao.findReminderEnabled().map { decode(it).document }
 

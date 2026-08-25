@@ -35,6 +35,9 @@ interface TravelDocumentDao {
     @Query("UPDATE travel_documents SET reminderEnabled = :enabled WHERE id = :id")
     suspend fun setReminderEnabled(id: String, enabled: Boolean)
 
+    @Query("DELETE FROM travel_documents WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query(
         "UPDATE travel_documents SET archived = 1, reminderEnabled = 0 " +
             "WHERE id = :id AND archived = 0 AND departureEpochMillis <= :nowEpochMillis",
