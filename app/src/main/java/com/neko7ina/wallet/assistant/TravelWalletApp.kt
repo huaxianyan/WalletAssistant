@@ -137,6 +137,7 @@ fun TravelWalletApp(
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val archivedDocuments by viewModel.archivedDocuments.collectAsStateWithLifecycle()
     val newTripsReminderEnabled by viewModel.newTripsReminderEnabled.collectAsStateWithLifecycle()
+    val ignoreDepartedTripsOnImport by viewModel.ignoreDepartedTripsOnImport.collectAsStateWithLifecycle()
     val departureReminderMinutes by viewModel.departureReminderMinutes.collectAsStateWithLifecycle()
     val liveStatusMinutes by viewModel.liveStatusMinutes.collectAsStateWithLifecycle()
     val googleWalletActionVisible by viewModel.googleWalletActionVisible.collectAsStateWithLifecycle()
@@ -243,6 +244,7 @@ fun TravelWalletApp(
 
                 Screen.SETTINGS -> SettingsScreen(
                     newTripsReminderEnabled = newTripsReminderEnabled,
+                    ignoreDepartedTripsOnImport = ignoreDepartedTripsOnImport,
                     departureReminderMinutes = departureReminderMinutes,
                     liveStatusMinutes = liveStatusMinutes,
                     googleWalletActionVisible = googleWalletActionVisible,
@@ -251,6 +253,7 @@ fun TravelWalletApp(
                     onNewTripsReminderChange = { enabled ->
                         changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
                     },
+                    onIgnoreDepartedTripsOnImportChange = viewModel::setIgnoreDepartedTripsOnImport,
                     onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
                     onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
                     onGoogleWalletVisibilityChange = viewModel::setGoogleWalletActionVisible,
@@ -286,10 +289,15 @@ fun TravelWalletApp(
                     onParse = {
                         when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = emailBody))) {
                             is ParseResult.Success -> {
-                                parsedDocument = result.document
-                                parseError = null
-                                confirmationSource = Screen.TEXT_IMPORT
-                                screen = Screen.CONFIRM
+                                if (ignoreDepartedTripsOnImport && result.document.hasDeparted()) {
+                                    parsedDocument = null
+                                    parseError = "这趟行程已经出发。如需保留历史行程，请在设置中关闭“忽略已过期行程”。"
+                                } else {
+                                    parsedDocument = result.document
+                                    parseError = null
+                                    confirmationSource = Screen.TEXT_IMPORT
+                                    screen = Screen.CONFIRM
+                                }
                             }
 
                             is ParseResult.Failure -> parseError = result.message
@@ -558,7 +566,7 @@ private fun TripDetailDialog(
     val document = saved.document
     val segment = document.segments.first()
     val seat = segment.seatAssignments.firstOrNull()
-    val canArchive = segment.departureTime.isBefore(ZonedDateTime.now(segment.departureTime.zone))
+    val canArchive = document.hasDeparted()
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -724,12 +732,14 @@ private fun AddTripSheet(
 @Composable
 private fun SettingsScreen(
     newTripsReminderEnabled: Boolean,
+    ignoreDepartedTripsOnImport: Boolean,
     departureReminderMinutes: Int,
     liveStatusMinutes: Int,
     googleWalletActionVisible: Boolean,
     themeMode: ThemeMode,
     onBack: () -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
+    onIgnoreDepartedTripsOnImportChange: (Boolean) -> Unit,
     onDepartureReminderMinutesChange: (Int) -> Unit,
     onLiveStatusMinutesChange: (Int) -> Unit,
     onGoogleWalletVisibilityChange: (Boolean) -> Unit,
@@ -743,6 +753,22 @@ private fun SettingsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            item {
+                Text(
+                    "导入",
+                    modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 4.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            item {
+                SettingSwitch(
+                    title = "忽略已过期行程",
+                    description = "导入时跳过已经出发的行程",
+                    checked = ignoreDepartedTripsOnImport,
+                    onCheckedChange = onIgnoreDepartedTripsOnImportChange,
+                )
+            }
             item {
                 Text(
                     "乘车提醒",

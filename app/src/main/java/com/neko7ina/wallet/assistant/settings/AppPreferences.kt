@@ -27,6 +27,12 @@ class AppPreferences(context: Context) {
             preferences.edit().putBoolean(KEY_NEW_TRIPS_REMINDER, value).apply()
         }
 
+    var ignoreDepartedTripsOnImport: Boolean
+        get() = preferences.getBoolean(KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT, true)
+        set(value) {
+            preferences.edit().putBoolean(KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT, value).apply()
+        }
+
     var departureReminderMinutes: Int
         get() = preferences.getInt(
             KEY_DEPARTURE_REMINDER_MINUTES,
@@ -82,6 +88,7 @@ class AppPreferences(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "trip_reminders"
         const val KEY_NEW_TRIPS_REMINDER = "new_trips_enabled"
+        const val KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT = "ignore_departed_trips_on_import"
         const val KEY_DEPARTURE_REMINDER_MINUTES = "departure_reminder_minutes"
         const val KEY_LIVE_STATUS_MINUTES = "live_status_minutes"
         const val KEY_GOOGLE_WALLET_VISIBLE = "google_wallet_visible"

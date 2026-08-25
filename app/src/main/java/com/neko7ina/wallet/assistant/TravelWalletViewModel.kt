@@ -33,6 +33,9 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     private val mutableNewTripsReminderEnabled = MutableStateFlow(
         appPreferences.newTripsReminderEnabled,
     )
+    private val mutableIgnoreDepartedTripsOnImport = MutableStateFlow(
+        appPreferences.ignoreDepartedTripsOnImport,
+    )
     private val mutableDepartureReminderMinutes = MutableStateFlow(
         appPreferences.departureReminderMinutes,
     )
@@ -44,6 +47,7 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     val gmailImportState = mutableGmailImportState.asStateFlow()
     val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
+    val ignoreDepartedTripsOnImport = mutableIgnoreDepartedTripsOnImport.asStateFlow()
     val departureReminderMinutes = mutableDepartureReminderMinutes.asStateFlow()
     val liveStatusMinutes = mutableLiveStatusMinutes.asStateFlow()
     val googleWalletActionVisible = mutableGoogleWalletActionVisible.asStateFlow()
@@ -72,7 +76,9 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
                     query = GMAIL_RAILWAY_QUERY,
                 ).mapNotNull { rawDocument ->
                     when (val result = railwayParser.parse(rawDocument)) {
-                        is ParseResult.Success -> result.document
+                        is ParseResult.Success -> result.document.takeUnless { document ->
+                            appPreferences.ignoreDepartedTripsOnImport && document.hasDeparted()
+                        }
                         is ParseResult.Failure -> null
                     }
                 }
@@ -106,6 +112,11 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     fun setNewTripsReminderEnabled(enabled: Boolean) {
         appPreferences.newTripsReminderEnabled = enabled
         mutableNewTripsReminderEnabled.value = enabled
+    }
+
+    fun setIgnoreDepartedTripsOnImport(ignore: Boolean) {
+        appPreferences.ignoreDepartedTripsOnImport = ignore
+        mutableIgnoreDepartedTripsOnImport.value = ignore
     }
 
     fun setDepartureReminderMinutes(minutes: Int) {
