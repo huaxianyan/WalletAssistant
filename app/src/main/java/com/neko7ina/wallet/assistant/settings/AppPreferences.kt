@@ -8,6 +8,16 @@ enum class ThemeMode {
     DARK,
 }
 
+object ReminderTimingConstraints {
+    const val STEP_MINUTES = 15
+    const val DEPARTURE_MIN_MINUTES = 30
+    const val DEPARTURE_MAX_MINUTES = 12 * 60
+    const val DEPARTURE_DEFAULT_MINUTES = 3 * 60
+    const val LIVE_MIN_MINUTES = 15
+    const val LIVE_MAX_MINUTES = 60
+    const val LIVE_DEFAULT_MINUTES = 30
+}
+
 class AppPreferences(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
@@ -15,6 +25,42 @@ class AppPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_NEW_TRIPS_REMINDER, false)
         set(value) {
             preferences.edit().putBoolean(KEY_NEW_TRIPS_REMINDER, value).apply()
+        }
+
+    var departureReminderMinutes: Int
+        get() = preferences.getInt(
+            KEY_DEPARTURE_REMINDER_MINUTES,
+            ReminderTimingConstraints.DEPARTURE_DEFAULT_MINUTES,
+        ).coerceIn(
+            ReminderTimingConstraints.DEPARTURE_MIN_MINUTES,
+            ReminderTimingConstraints.DEPARTURE_MAX_MINUTES,
+        )
+        set(value) {
+            preferences.edit().putInt(
+                KEY_DEPARTURE_REMINDER_MINUTES,
+                value.coerceIn(
+                    ReminderTimingConstraints.DEPARTURE_MIN_MINUTES,
+                    ReminderTimingConstraints.DEPARTURE_MAX_MINUTES,
+                ),
+            ).apply()
+        }
+
+    var liveStatusMinutes: Int
+        get() = preferences.getInt(
+            KEY_LIVE_STATUS_MINUTES,
+            ReminderTimingConstraints.LIVE_DEFAULT_MINUTES,
+        ).coerceIn(
+            ReminderTimingConstraints.LIVE_MIN_MINUTES,
+            ReminderTimingConstraints.LIVE_MAX_MINUTES,
+        )
+        set(value) {
+            preferences.edit().putInt(
+                KEY_LIVE_STATUS_MINUTES,
+                value.coerceIn(
+                    ReminderTimingConstraints.LIVE_MIN_MINUTES,
+                    ReminderTimingConstraints.LIVE_MAX_MINUTES,
+                ),
+            ).apply()
         }
 
     var googleWalletActionVisible: Boolean
@@ -36,6 +82,8 @@ class AppPreferences(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "trip_reminders"
         const val KEY_NEW_TRIPS_REMINDER = "new_trips_enabled"
+        const val KEY_DEPARTURE_REMINDER_MINUTES = "departure_reminder_minutes"
+        const val KEY_LIVE_STATUS_MINUTES = "live_status_minutes"
         const val KEY_GOOGLE_WALLET_VISIBLE = "google_wallet_visible"
         const val KEY_THEME_MODE = "theme_mode"
     }

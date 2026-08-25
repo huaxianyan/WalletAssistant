@@ -57,6 +57,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -91,11 +92,13 @@ import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
+import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
 import com.neko7ina.wallet.assistant.settings.ThemeMode
 import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private enum class Screen {
@@ -134,6 +137,8 @@ fun TravelWalletApp(
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val archivedDocuments by viewModel.archivedDocuments.collectAsStateWithLifecycle()
     val newTripsReminderEnabled by viewModel.newTripsReminderEnabled.collectAsStateWithLifecycle()
+    val departureReminderMinutes by viewModel.departureReminderMinutes.collectAsStateWithLifecycle()
+    val liveStatusMinutes by viewModel.liveStatusMinutes.collectAsStateWithLifecycle()
     val googleWalletActionVisible by viewModel.googleWalletActionVisible.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val gmailImportState by viewModel.gmailImportState.collectAsStateWithLifecycle()
@@ -142,7 +147,10 @@ fun TravelWalletApp(
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
     var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
     var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
-    var selectedTrip by remember { mutableStateOf<SavedTravelDocument?>(null) }
+    var selectedTripId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedTrip = (documents + archivedDocuments).firstOrNull {
+        it.document.stableId() == selectedTripId
+    }
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var walletAvailability by remember { mutableStateOf(WalletAvailability.CHECKING) }
     val walletPassFactory = remember { GoogleWalletPassFactory() }
@@ -221,7 +229,7 @@ fun TravelWalletApp(
                 when (targetScreen) {
                 Screen.HOME -> HomeScreen(
                     documents = documents,
-                    onTripClick = { selectedTrip = it },
+                    onTripClick = { selectedTripId = it.document.stableId() },
                     onAddClick = { showAddSheet = true },
                     onArchiveClick = { screen = Screen.ARCHIVE },
                     onSettingsClick = { screen = Screen.SETTINGS },
@@ -230,17 +238,21 @@ fun TravelWalletApp(
                 Screen.ARCHIVE -> ArchiveScreen(
                     documents = archivedDocuments,
                     onBack = { screen = Screen.HOME },
-                    onTripClick = { selectedTrip = it },
+                    onTripClick = { selectedTripId = it.document.stableId() },
                 )
 
                 Screen.SETTINGS -> SettingsScreen(
                     newTripsReminderEnabled = newTripsReminderEnabled,
+                    departureReminderMinutes = departureReminderMinutes,
+                    liveStatusMinutes = liveStatusMinutes,
                     googleWalletActionVisible = googleWalletActionVisible,
                     themeMode = themeMode,
                     onBack = { screen = Screen.HOME },
                     onNewTripsReminderChange = { enabled ->
                         changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
                     },
+                    onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
+                    onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
                     onGoogleWalletVisibilityChange = viewModel::setGoogleWalletActionVisible,
                     onThemeModeChange = viewModel::setThemeMode,
                 )
@@ -318,7 +330,9 @@ fun TravelWalletApp(
                 saved = saved,
                 walletAvailability = walletAvailability,
                 showGoogleWalletAction = googleWalletActionVisible,
-                onDismiss = { selectedTrip = null },
+                departureReminderMinutes = departureReminderMinutes,
+                liveStatusMinutes = liveStatusMinutes,
+                onDismiss = { selectedTripId = null },
                 onReminderChange = { enabled ->
                     changeReminder(enabled) { viewModel.setReminderEnabled(saved, enabled) }
                 },
@@ -335,11 +349,11 @@ fun TravelWalletApp(
                 },
                 onArchive = {
                     viewModel.setArchived(saved, true)
-                    selectedTrip = null
+                    selectedTripId = null
                 },
                 onRestore = {
                     viewModel.setArchived(saved, false)
-                    selectedTrip = null
+                    selectedTripId = null
                 },
             )
         }
@@ -532,6 +546,8 @@ private fun TripDetailDialog(
     saved: SavedTravelDocument,
     walletAvailability: WalletAvailability,
     showGoogleWalletAction: Boolean,
+    departureReminderMinutes: Int,
+    liveStatusMinutes: Int,
     onDismiss: () -> Unit,
     onReminderChange: (Boolean) -> Unit,
     onTestReminder: (() -> Unit)?,
@@ -587,19 +603,25 @@ private fun TripDetailDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("乘车提醒", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "发车前 3 小时提醒，临近发车时显示实时状态",
+                                if (canArchive) {
+                                    "行程已结束，无法开启提醒"
+                                } else {
+                                    "发车前 ${formatLeadTime(departureReminderMinutes)}提醒，" +
+                                        "发车前 ${formatLeadTime(liveStatusMinutes)}显示实时状态"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
-                            checked = saved.reminderEnabled,
+                            checked = saved.reminderEnabled && !canArchive,
                             onCheckedChange = onReminderChange,
+                            enabled = !canArchive,
                         )
                     }
                 }
 
-                if (onTestReminder != null) {
+                if (onTestReminder != null && !canArchive) {
                     TextButton(
                         onClick = onTestReminder,
                         modifier = Modifier.align(Alignment.End),
@@ -702,10 +724,14 @@ private fun AddTripSheet(
 @Composable
 private fun SettingsScreen(
     newTripsReminderEnabled: Boolean,
+    departureReminderMinutes: Int,
+    liveStatusMinutes: Int,
     googleWalletActionVisible: Boolean,
     themeMode: ThemeMode,
     onBack: () -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
+    onDepartureReminderMinutesChange: (Int) -> Unit,
+    onLiveStatusMinutesChange: (Int) -> Unit,
     onGoogleWalletVisibilityChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
@@ -718,11 +744,37 @@ private fun SettingsScreen(
             contentPadding = contentPadding,
         ) {
             item {
+                Text(
+                    "乘车提醒",
+                    modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 4.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            item {
                 SettingSwitch(
                     title = "新行程默认提醒",
                     description = "导入新行程时自动开启乘车提醒",
                     checked = newTripsReminderEnabled,
                     onCheckedChange = onNewTripsReminderChange,
+                )
+            }
+            item {
+                ReminderTimingSlider(
+                    title = "发车前提醒",
+                    minutes = departureReminderMinutes,
+                    minimum = ReminderTimingConstraints.DEPARTURE_MIN_MINUTES,
+                    maximum = ReminderTimingConstraints.DEPARTURE_MAX_MINUTES,
+                    onMinutesChange = onDepartureReminderMinutesChange,
+                )
+            }
+            item {
+                ReminderTimingSlider(
+                    title = "显示实时状态",
+                    minutes = liveStatusMinutes,
+                    minimum = ReminderTimingConstraints.LIVE_MIN_MINUTES,
+                    maximum = ReminderTimingConstraints.LIVE_MAX_MINUTES,
+                    onMinutesChange = onLiveStatusMinutesChange,
                 )
             }
             item {
@@ -762,6 +814,51 @@ private fun SettingsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReminderTimingSlider(
+    title: String,
+    minutes: Int,
+    minimum: Int,
+    maximum: Int,
+    onMinutesChange: (Int) -> Unit,
+) {
+    var pendingMinutes by remember(minutes) { mutableStateOf(minutes) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                formatLeadTime(pendingMinutes),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge,
+            )
+        }
+        Slider(
+            value = pendingMinutes.toFloat(),
+            onValueChange = { value ->
+                pendingMinutes = (
+                    value / ReminderTimingConstraints.STEP_MINUTES
+                    ).roundToInt() * ReminderTimingConstraints.STEP_MINUTES
+            },
+            onValueChangeFinished = { onMinutesChange(pendingMinutes) },
+            valueRange = minimum.toFloat()..maximum.toFloat(),
+            steps = (maximum - minimum) / ReminderTimingConstraints.STEP_MINUTES - 1,
+        )
+        Text(
+            "可设置为 ${formatLeadTime(minimum)}至 ${formatLeadTime(maximum)}，每次调整 15 分钟",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1029,6 +1126,16 @@ private fun DetailRow(label: String, value: String) {
     ) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value)
+    }
+}
+
+private fun formatLeadTime(minutes: Int): String {
+    val hours = minutes / 60
+    val remainingMinutes = minutes % 60
+    return when {
+        hours == 0 -> "$minutes 分钟"
+        remainingMinutes == 0 -> "$hours 小时"
+        else -> "$hours 小时 $remainingMinutes 分钟"
     }
 }
 

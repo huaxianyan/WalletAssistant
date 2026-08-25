@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.stableId
+import com.neko7ina.wallet.assistant.settings.AppPreferences
 import java.time.Duration
 import java.time.Instant
 
@@ -18,6 +19,7 @@ internal enum class ReminderKind {
 class TripReminderScheduler(context: Context) {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
+    private val appPreferences = AppPreferences(applicationContext)
 
     fun canScheduleExactReminders(): Boolean =
         Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
@@ -31,8 +33,10 @@ class TripReminderScheduler(context: Context) {
         }
 
         val id = document.stableId()
-        scheduleAlarm(id, STANDARD_SUFFIX, document, ReminderKind.STANDARD, departure.minus(STANDARD_LEAD))
-        scheduleAlarm(id, LIVE_SUFFIX, document, ReminderKind.LIVE, departure.minus(LIVE_LEAD))
+        val standardLead = Duration.ofMinutes(appPreferences.departureReminderMinutes.toLong())
+        val liveLead = Duration.ofMinutes(appPreferences.liveStatusMinutes.toLong())
+        scheduleAlarm(id, STANDARD_SUFFIX, document, ReminderKind.STANDARD, departure.minus(standardLead))
+        scheduleAlarm(id, LIVE_SUFFIX, document, ReminderKind.LIVE, departure.minus(liveLead))
         scheduleAlarm(id, END_SUFFIX, document, ReminderKind.END, departure)
     }
 
@@ -103,9 +107,6 @@ class TripReminderScheduler(context: Context) {
     }
 
     private companion object {
-        val STANDARD_LEAD: Duration = Duration.ofHours(3)
-        val LIVE_LEAD: Duration = Duration.ofMinutes(30)
-
         const val STANDARD_SUFFIX = "standard"
         const val LIVE_SUFFIX = "live"
         const val END_SUFFIX = "end"

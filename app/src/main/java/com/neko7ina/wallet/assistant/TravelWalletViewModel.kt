@@ -33,6 +33,10 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     private val mutableNewTripsReminderEnabled = MutableStateFlow(
         appPreferences.newTripsReminderEnabled,
     )
+    private val mutableDepartureReminderMinutes = MutableStateFlow(
+        appPreferences.departureReminderMinutes,
+    )
+    private val mutableLiveStatusMinutes = MutableStateFlow(appPreferences.liveStatusMinutes)
     private val mutableGoogleWalletActionVisible = MutableStateFlow(
         appPreferences.googleWalletActionVisible,
     )
@@ -40,6 +44,8 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     val gmailImportState = mutableGmailImportState.asStateFlow()
     val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
+    val departureReminderMinutes = mutableDepartureReminderMinutes.asStateFlow()
+    val liveStatusMinutes = mutableLiveStatusMinutes.asStateFlow()
     val googleWalletActionVisible = mutableGoogleWalletActionVisible.asStateFlow()
     val themeMode = mutableThemeMode.asStateFlow()
     val documents = repository.observeDocuments().stateIn(
@@ -102,6 +108,18 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         mutableNewTripsReminderEnabled.value = enabled
     }
 
+    fun setDepartureReminderMinutes(minutes: Int) {
+        appPreferences.departureReminderMinutes = minutes
+        mutableDepartureReminderMinutes.value = appPreferences.departureReminderMinutes
+        rescheduleEnabledDocuments()
+    }
+
+    fun setLiveStatusMinutes(minutes: Int) {
+        appPreferences.liveStatusMinutes = minutes
+        mutableLiveStatusMinutes.value = appPreferences.liveStatusMinutes
+        rescheduleEnabledDocuments()
+    }
+
     fun setGoogleWalletActionVisible(visible: Boolean) {
         appPreferences.googleWalletActionVisible = visible
         mutableGoogleWalletActionVisible.value = visible
@@ -132,6 +150,12 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     fun scheduleReminderTest(document: TravelDocument) {
         reminderScheduler.scheduleDebugSequence(document)
+    }
+
+    private fun rescheduleEnabledDocuments() {
+        viewModelScope.launch {
+            repository.getReminderEnabledDocuments().forEach(reminderScheduler::schedule)
+        }
     }
 
     private companion object {
