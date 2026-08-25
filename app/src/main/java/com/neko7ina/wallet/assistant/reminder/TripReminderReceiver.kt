@@ -9,6 +9,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -61,6 +62,12 @@ class TripReminderReceiver : BroadcastReceiver() {
         val seatDescription = seat.ifBlank { "待确认" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_china_railway_notification)
+            .setLargeIcon(
+                Icon.createWithResource(
+                    context,
+                    R.drawable.ic_china_railway_notification_large,
+                ),
+            )
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setContentTitle(title)
             .setContentText("$departure · $route")
