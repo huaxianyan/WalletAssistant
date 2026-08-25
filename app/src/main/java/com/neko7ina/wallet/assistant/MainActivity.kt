@@ -2,10 +2,13 @@ package com.neko7ina.wallet.assistant
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlarmManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -75,8 +78,18 @@ import java.time.format.DateTimeFormatter
 class MainActivity : ComponentActivity() {
     private val authorizationClient by lazy { Identity.getAuthorizationClient(this) }
     private val walletClient by lazy { Pay.getClient(this) }
+    private val alarmManager by lazy { getSystemService(AlarmManager::class.java) }
     private var gmailAuthorizationCallback: ((Result<String>) -> Unit)? = null
     private var notificationPermissionCallback: ((Boolean) -> Unit)? = null
+    private var exactReminderPermissionCallback: ((Boolean) -> Unit)? = null
+    private val exactReminderPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        exactReminderPermissionCallback?.invoke(
+            Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms(),
+        )
+        exactReminderPermissionCallback = null
+    }
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -106,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 checkGoogleWalletAvailability = ::checkGoogleWalletAvailability,
                 addToGoogleWallet = ::addToGoogleWallet,
                 requestNotificationPermission = ::requestNotificationPermission,
+                requestExactReminderPermission = ::requestExactReminderPermission,
             )
         }
     }
@@ -155,6 +169,20 @@ class MainActivity : ComponentActivity() {
 
     private fun addToGoogleWallet(unsignedPass: String) {
         walletClient.savePasses(unsignedPass, this, ADD_TO_GOOGLE_WALLET_REQUEST_CODE)
+    }
+
+    private fun requestExactReminderPermission(callback: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()) {
+            callback(true)
+            return
+        }
+        exactReminderPermissionCallback = callback
+        exactReminderPermissionLauncher.launch(
+            Intent(
+                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                Uri.parse("package:$packageName"),
+            ),
+        )
     }
 
     private fun requestNotificationPermission(callback: (Boolean) -> Unit) {
@@ -232,6 +260,7 @@ private fun TravelWalletApp(
     checkGoogleWalletAvailability: ((Boolean) -> Unit) -> Unit,
     addToGoogleWallet: (String) -> Unit,
     requestNotificationPermission: ((Boolean) -> Unit) -> Unit,
+    requestExactReminderPermission: ((Boolean) -> Unit) -> Unit,
     viewModel: TravelWalletViewModel = viewModel(),
 ) {
     val savedDocuments by viewModel.documents.collectAsStateWithLifecycle()
@@ -251,15 +280,25 @@ private fun TravelWalletApp(
             apply()
             return
         }
-        requestNotificationPermission { granted ->
-            if (granted) {
-                apply()
-            } else {
+        requestNotificationPermission { notificationGranted ->
+            if (!notificationGranted) {
                 Toast.makeText(
                     context,
                     "请允许通知后再开启乘车提醒。",
                     Toast.LENGTH_LONG,
                 ).show()
+                return@requestNotificationPermission
+            }
+            requestExactReminderPermission { exactReminderGranted ->
+                if (exactReminderGranted) {
+                    apply()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "请允许精确提醒后再开启乘车提醒。",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
             }
         }
     }

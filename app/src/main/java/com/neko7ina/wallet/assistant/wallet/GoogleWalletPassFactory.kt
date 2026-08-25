@@ -67,11 +67,6 @@ class GoogleWalletPassFactory {
                                 )
                             }
                         }
-                        putJsonObject("notifications") {
-                            putJsonObject("upcomingNotification") {
-                                put("enabledNotification", true)
-                            }
-                        }
                         putJsonArray("textModulesData") {
                             addTextModule("origin", "出发站", segment.origin.name)
                             addTextModule("destination", "目的站", segment.destination.name)

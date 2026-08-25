@@ -14,6 +14,9 @@ interface TravelDocumentDao {
     @Query("SELECT * FROM travel_documents WHERE id = :id")
     suspend fun findById(id: String): StoredTravelDocument?
 
+    @Query("SELECT * FROM travel_documents WHERE reminderEnabled = 1")
+    suspend fun findReminderEnabled(): List<StoredTravelDocument>
+
     @Query(
         "SELECT * FROM travel_documents " +
             "WHERE providerCode = :providerCode AND reservationReference = :reservationReference",

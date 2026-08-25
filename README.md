@@ -1,6 +1,6 @@
 # WalletAssistant
 
-从用户授权的数据源导入行程信息，经用户确认后添加到 Google Wallet。当前已实现从 Gmail 主动导入 12306 购票邮件、行程确认、本地持久化、无后端的 Google Wallet 添加流程和设备端乘车提醒。
+从用户授权的数据源导入并在设备端管理行程信息。当前已实现从 Gmail 主动导入 12306 购票邮件、行程确认、本地持久化、设备端乘车提醒，以及可选的 Google Wallet 导出。
 
 ## 当前范围
 
@@ -8,9 +8,10 @@
 - `app`：Android/Compose 界面、Gmail 主动导入和 Room 本地存储
 - Gmail Token 和邮件正文只在设备端使用，不发送到自建服务端
 - 不处理检票二维码
-- 使用 Google Wallet Android SDK 的未签名 Pass 流程，不建设自有签名服务
+- Android 应用是行程管理和提醒的主要入口
+- Google Wallet 是可选导出目标，使用 Android SDK 的未签名 Pass 流程，不建设自有签名服务
 - 应用提醒默认关闭，可设置新行程默认值并为单个行程开关
-- 发车前 3 小时显示普通锁屏通知；Android 16 在发车前 30 分钟升级为 Live Update，发车后自动结束
+- 经用户授权精确提醒后，发车前 3 小时显示普通锁屏通知；Android 16 在发车前 30 分钟升级为 Live Update，发车后自动结束
 
 ## 本地环境
 

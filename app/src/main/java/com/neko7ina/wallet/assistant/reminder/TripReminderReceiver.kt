@@ -1,53 +1,57 @@
 package com.neko7ina.wallet.assistant.reminder
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.work.CoroutineWorker
-import androidx.work.Data
-import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import com.neko7ina.wallet.assistant.MainActivity
 import com.neko7ina.wallet.assistant.R
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.stableId
+import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
+import com.neko7ina.wallet.assistant.data.TravelWalletDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
-internal enum class ReminderKind {
-    STANDARD,
-    LIVE,
-    END,
-}
-
-class TripReminderWorker(
-    appContext: Context,
-    workerParameters: WorkerParameters,
-) : CoroutineWorker(appContext, workerParameters) {
-    override suspend fun doWork(): Result {
-        val documentId = inputData.getString(KEY_DOCUMENT_ID) ?: return Result.failure()
-        val kind = inputData.getString(KEY_KIND)?.let(ReminderKind::valueOf) ?: return Result.failure()
-        if (kind == ReminderKind.END) {
-            cancelNotification(applicationContext, documentId)
-            return Result.success()
+class TripReminderReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_REMINDER) {
+            handleReminder(context, intent)
+        } else {
+            rescheduleEnabledTrips(context)
         }
-        if (!canPostNotifications(applicationContext)) return Result.success()
+    }
 
-        createNotificationChannel(applicationContext)
-        val serviceNumber = inputData.getString(KEY_SERVICE_NUMBER) ?: return Result.failure()
-        val route = inputData.getString(KEY_ROUTE) ?: return Result.failure()
-        val seat = inputData.getString(KEY_SEAT) ?: return Result.failure()
-        val departure = inputData.getString(KEY_DEPARTURE) ?: return Result.failure()
-        val displayEnd = inputData.getLong(KEY_DISPLAY_END, 0L)
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+    private fun handleReminder(context: Context, intent: Intent) {
+        val documentId = intent.getStringExtra(KEY_DOCUMENT_ID) ?: return
+        val kind = intent.getStringExtra(KEY_KIND)?.let(ReminderKind::valueOf) ?: return
+        if (kind == ReminderKind.END) {
+            cancelNotification(context, documentId)
+            return
+        }
+        if (!canPostNotifications(context)) return
+
+        createNotificationChannel(context)
+        val serviceNumber = intent.getStringExtra(KEY_SERVICE_NUMBER) ?: return
+        val route = intent.getStringExtra(KEY_ROUTE) ?: return
+        val seat = intent.getStringExtra(KEY_SEAT) ?: return
+        val departure = intent.getStringExtra(KEY_DEPARTURE) ?: return
+        val displayEnd = intent.getLongExtra(KEY_DISPLAY_END, 0L)
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_train_notification)
             .setContentTitle(
                 if (kind == ReminderKind.LIVE) {
@@ -58,7 +62,7 @@ class TripReminderWorker(
             )
             .setContentText("$departure，$route · $seat")
             .setStyle(NotificationCompat.BigTextStyle().bigText("$departure，$route，$seat"))
-            .setContentIntent(contentIntent(applicationContext, documentId))
+            .setContentIntent(contentIntent(context, documentId))
             .setAutoCancel(kind == ReminderKind.STANDARD)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -75,11 +79,27 @@ class TripReminderWorker(
                 }
             }
             .build()
-        NotificationManagerCompat.from(applicationContext).notify(notificationId(documentId), notification)
-        return Result.success()
+        NotificationManagerCompat.from(context).notify(notificationId(documentId), notification)
+    }
+
+    private fun rescheduleEnabledTrips(context: Context) {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                val repository = TravelDocumentRepository(
+                    TravelWalletDatabase.getInstance(context).travelDocumentDao(),
+                )
+                val scheduler = TripReminderScheduler(context)
+                repository.getReminderEnabledDocuments().forEach(scheduler::schedule)
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 
     companion object {
+        private const val ACTION_REMINDER =
+            "com.neko7ina.wallet.assistant.action.TRIP_REMINDER"
         private const val CHANNEL_ID = "trip_departure_reminders"
         private const val KEY_DOCUMENT_ID = "document_id"
         private const val KEY_KIND = "kind"
@@ -90,21 +110,35 @@ class TripReminderWorker(
         private const val KEY_DISPLAY_END = "display_end"
         private val DEPARTURE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("M 月 d 日 HH:mm")
 
-        internal fun inputData(
-            document: TravelDocument,
-            kind: ReminderKind,
-            displayEnd: Instant,
-        ): Data {
-            val segment = document.segments.first()
-            val seat = segment.seatAssignments.firstOrNull()
-            return workDataOf(
-                KEY_DOCUMENT_ID to document.stableId(),
-                KEY_KIND to kind.name,
-                KEY_SERVICE_NUMBER to segment.serviceNumber,
-                KEY_ROUTE to "${segment.origin.name} → ${segment.destination.name}",
-                KEY_SEAT to seat?.let { "${it.section} 车 ${it.seat}" }.orEmpty(),
-                KEY_DEPARTURE to segment.departureTime.format(DEPARTURE_FORMAT),
-                KEY_DISPLAY_END to displayEnd.toEpochMilli(),
+        internal fun pendingIntent(
+            context: Context,
+            documentId: String,
+            suffix: String,
+            flags: Int,
+            document: TravelDocument? = null,
+            kind: ReminderKind? = null,
+            displayEnd: Instant? = null,
+        ): PendingIntent? {
+            val intent = Intent(context, TripReminderReceiver::class.java).apply {
+                action = ACTION_REMINDER
+                data = Uri.parse("walletassistant://reminder/$documentId/$suffix")
+                if (document != null && kind != null && displayEnd != null) {
+                    val segment = document.segments.first()
+                    val seat = segment.seatAssignments.firstOrNull()
+                    putExtra(KEY_DOCUMENT_ID, documentId)
+                    putExtra(KEY_KIND, kind.name)
+                    putExtra(KEY_SERVICE_NUMBER, segment.serviceNumber)
+                    putExtra(KEY_ROUTE, "${segment.origin.name} → ${segment.destination.name}")
+                    putExtra(KEY_SEAT, seat?.let { "${it.section} 车 ${it.seat}" }.orEmpty())
+                    putExtra(KEY_DEPARTURE, segment.departureTime.format(DEPARTURE_FORMAT))
+                    putExtra(KEY_DISPLAY_END, displayEnd.toEpochMilli())
+                }
+            }
+            return PendingIntent.getBroadcast(
+                context,
+                "$documentId:$suffix".hashCode(),
+                intent,
+                flags,
             )
         }
 
