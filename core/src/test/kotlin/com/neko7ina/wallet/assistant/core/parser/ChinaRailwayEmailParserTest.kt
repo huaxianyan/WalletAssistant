@@ -40,4 +40,23 @@ class ChinaRailwayEmailParserTest {
         assertEquals("成人票", segment.attributes["ticketType"])
         assertEquals("电子客票", segment.attributes["credentialType"])
     }
+
+    @Test
+    fun `读取邮件截图文字后识别被空格和换行拆开的字段`() {
+        val ocrText = """
+            您于2026年02月15日在中国铁路客户服务中心网站(12306.cn) 成功购买了1 张车票,票款共计120.00元,订单号码
+            E851136111 。所购车票信息如下:
+            1.华贤阳,2026年02月21日13：10开,镇江站-上海站,G7229次列车,2车17C号,二等座,成人票,票价
+            120.0元,电子客票。
+        """.trimIndent()
+
+        val result = ChinaRailwayEmailParser().parse(
+            RawDocument(body = normalizeOcrTextForStructuredParsing(ocrText)),
+        )
+
+        val document = assertIs<ParseResult.Success>(result).document
+        assertEquals("E851136111", document.reservation.reference)
+        assertEquals("G7229", document.segments.single().serviceNumber)
+        assertEquals("17C", document.segments.single().seatAssignments.single().seat)
+    }
 }

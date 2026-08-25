@@ -91,6 +91,7 @@ import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
+import com.neko7ina.wallet.assistant.core.parser.normalizeOcrTextForStructuredParsing
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
 import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
 import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
@@ -300,7 +301,12 @@ fun TravelWalletApp(
                     },
                     onBack = { screen = Screen.HOME },
                     onParse = {
-                        when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = emailBody))) {
+                        val textToParse = if (importMode == ImportMode.SCREENSHOT) {
+                            normalizeOcrTextForStructuredParsing(emailBody)
+                        } else {
+                            emailBody
+                        }
+                        when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = textToParse))) {
                             is ParseResult.Success -> {
                                 if (ignoreDepartedTripsOnImport && result.document.hasDeparted()) {
                                     parsedDocument = null
@@ -313,7 +319,13 @@ fun TravelWalletApp(
                                 }
                             }
 
-                            is ParseResult.Failure -> parseError = result.message
+                            is ParseResult.Failure -> {
+                                parseError = if (importMode == ImportMode.SCREENSHOT) {
+                                    screenshotParseError(result.message)
+                                } else {
+                                    result.message
+                                }
+                            }
                         }
                     },
                 )
@@ -1249,6 +1261,14 @@ private fun DetailRow(label: String, value: String) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value)
     }
+}
+
+private fun screenshotParseError(message: String): String = when {
+    message.startsWith("这封邮件") -> "截图文字中没有找到完整的铁路购票信息，请检查识别文字。"
+    else -> message
+        .replace("邮件中", "截图文字中")
+        .replace("邮件内容", "识别文字")
+        .replace("邮件显示", "截图文字显示")
 }
 
 private fun formatLeadTime(minutes: Int): String {
