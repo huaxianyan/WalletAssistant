@@ -65,7 +65,7 @@ h1 { margin: 8px 0 18px; font-size: clamp(2.6rem, 7vw, 5rem); line-height: 1.05;
 h2 { margin-top: 0; font-size: clamp(1.55rem, 3vw, 2.15rem); line-height: 1.25; }
 h3 { margin-bottom: 6px; }
 .lead { max-width: 680px; color: var(--muted); font-size: 1.16rem; }
-.hero-icon { width: min(300px, 70vw); justify-self: center; filter: drop-shadow(var(--shadow)); }
+.hero-icon { width: min(300px, 70vw); justify-self: center; border-radius: 22%; filter: drop-shadow(var(--shadow)); }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .button {
   display: inline-flex;
