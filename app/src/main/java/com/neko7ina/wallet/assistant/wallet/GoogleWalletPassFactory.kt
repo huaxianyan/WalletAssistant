@@ -52,7 +52,7 @@ class GoogleWalletPassFactory {
                         put("state", "ACTIVE")
                         put("genericType", "GENERIC_TYPE_UNSPECIFIED")
                         put("hexBackgroundColor", "#6F7378")
-                        put("cardTitle", localized("中国铁路"))
+                        put("cardTitle", localized("铁路出行"))
                         put(
                             "header",
                             localized("${segment.origin.name} → ${segment.destination.name}"),
