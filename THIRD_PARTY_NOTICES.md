@@ -1,11 +1,62 @@
-# Third-party notices
+# 第三方许可声明
 
-## Google Wallet Android codelab assets
+「出行」使用以下第三方软件和素材。版本以 [`gradle/libs.versions.toml`](gradle/libs.versions.toml) 及对应的 Gradle 依赖解析结果为准。
 
-The `add_to_google_wallet_button_foreground.xml` asset is derived from the Google Wallet Android codelab:
+## AndroidX
 
-- Source: https://github.com/google-wallet/android-codelab
+应用使用 AndroidX Activity、Core、Lifecycle、Jetpack Compose、Material 3 和 Room。
+
+- Copyright：The Android Open Source Project
+- License：Apache License 2.0
+- 源码：https://cs.android.com/androidx/platform/frameworks/support
+- 许可全文：[LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)
+
+## Kotlin 与 kotlinx.serialization
+
+应用使用 Kotlin 标准库和 kotlinx.serialization。
+
+- Copyright：JetBrains s.r.o. and Kotlin contributors
+- License：Apache License 2.0
+- 源码：https://github.com/JetBrains/kotlin
+- 源码：https://github.com/Kotlin/kotlinx.serialization
+- 许可全文：[LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)
+
+## ML Kit 中文文字识别
+
+应用使用设备端 ML Kit 中文文字识别模型：
+
+```text
+com.google.mlkit:text-recognition-chinese:16.0.1
+```
+
+该组件受 ML Kit Terms of Service 约束：
+
+https://developers.google.com/ml-kit/terms
+
+## Google Play services
+
+应用使用以下 Google Play services 组件：
+
+```text
+com.google.android.gms:play-services-auth:21.6.0
+com.google.android.gms:play-services-pay:16.5.0
+```
+
+这些组件的 Maven 元数据声明适用 Android Software Development Kit License Agreement：
+
+https://developer.android.com/studio/terms.html
+
+## Google Wallet Android codelab 素材
+
+`app/src/main/res/drawable/add_to_google_wallet_button_foreground.xml` 来源于 Google Wallet Android codelab。
+
+- Source：https://github.com/google-wallet/android-codelab
 - Copyright 2022 Google Inc.
-- License: Apache License 2.0
+- License：Apache License 2.0
+- 许可全文：[LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)
 
-https://www.apache.org/licenses/LICENSE-2.0
+## 商标
+
+Android、Gmail、Google、Google Play、Google Wallet 和 ML Kit 是 Google LLC 的商标或服务名称。Kotlin 是 Kotlin Foundation 的商标。
+
+第三方名称仅用于说明兼容性、依赖关系和数据处理边界，不表示第三方对「出行」提供认可、赞助或官方授权。

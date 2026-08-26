@@ -20,7 +20,7 @@
 - 应用提醒默认关闭，可设置新行程默认值并为单个行程开关；已结束的行程不能开启提醒
 - 经用户授权精确提醒后，在设定时间显示普通锁屏通知；Android 16 在设定时间升级为 Live Update，发车后自动结束
 - 通知支持“已上车”和“取消提醒”：前者结束提醒并归档，后者只结束提醒，不影响独立的自动归档任务
-- 发车前提醒支持 30 分钟～12 小时，实时状态支持 15 分钟～1 小时，均以 15 分钟为调整粒度
+- 发车前提醒支持 30 分钟～12 小时，以 15 分钟为调整粒度；实时状态支持 15 分钟～1 小时，以 5 分钟为调整粒度
 
 ## 本地环境
 
@@ -43,3 +43,12 @@ https://chuxing.neko7ina.com
 ```
 
 部署步骤见 [`docs/cloudflare-pages.md`](docs/cloudflare-pages.md)。
+
+## 发布与许可
+
+- [更新记录](CHANGELOG.md)
+- [`v1.0.0` Release Notes 草稿](docs/release-notes-v1.0.0.md)
+- [第三方许可声明](THIRD_PARTY_NOTICES.md)
+- [隐私政策](https://chuxing.neko7ina.com/privacy/)
+
+正式 APK 只通过 [GitHub Releases](https://github.com/huaxianyan/WalletAssistant/releases) 发布。
