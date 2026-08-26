@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -13,6 +14,9 @@ interface TravelDocumentDao {
 
     @Query("SELECT * FROM travel_documents WHERE archived = 1 ORDER BY departureEpochMillis DESC")
     fun observeArchived(): Flow<List<StoredTravelDocument>>
+
+    @Query("SELECT * FROM travel_documents ORDER BY departureEpochMillis ASC")
+    suspend fun findAll(): List<StoredTravelDocument>
 
     @Query("SELECT * FROM travel_documents WHERE id = :id")
     suspend fun findById(id: String): StoredTravelDocument?
@@ -30,7 +34,13 @@ interface TravelDocumentDao {
     suspend fun findByReservation(
         providerCode: String,
         reservationReference: String,
-    ): StoredTravelDocument?
+    ): List<StoredTravelDocument>
+
+    @Query(
+        "DELETE FROM travel_documents " +
+            "WHERE providerCode = :providerCode AND reservationReference = :reservationReference",
+    )
+    suspend fun deleteByReservation(providerCode: String, reservationReference: String)
 
     @Query("UPDATE travel_documents SET reminderEnabled = :enabled WHERE id = :id")
     suspend fun setReminderEnabled(id: String, enabled: Boolean)
@@ -52,4 +62,14 @@ interface TravelDocumentDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(document: StoredTravelDocument)
+
+    @Transaction
+    suspend fun replaceReservation(
+        providerCode: String,
+        reservationReference: String,
+        documents: List<StoredTravelDocument>,
+    ) {
+        deleteByReservation(providerCode, reservationReference)
+        documents.forEach { upsert(it) }
+    }
 }

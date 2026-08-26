@@ -40,13 +40,27 @@ https://developers.google.com/ml-kit/terms
 应用使用以下 Google Play services 组件：
 
 ```text
-com.google.android.gms:play-services-auth:21.6.0
 com.google.android.gms:play-services-pay:16.5.0
 ```
 
 这些组件的 Maven 元数据声明适用 Android Software Development Kit License Agreement：
 
 https://developer.android.com/studio/terms.html
+
+## Jakarta Mail Android
+
+应用使用以下组件连接用户配置的 IMAP 邮箱：
+
+```text
+com.sun.mail:android-mail:1.6.7
+com.sun.mail:android-activation:1.6.7
+```
+
+- Copyright：Eclipse Foundation and individual contributors
+- License：EPL-2.0 OR GPL-2.0 WITH Classpath-exception-2.0
+- 源码：https://github.com/javaee/javamail
+- 许可全文：[LICENSES/JavaMail-LICENSE.md](LICENSES/JavaMail-LICENSE.md)
+- Notice：[LICENSES/JavaMail-NOTICE.md](LICENSES/JavaMail-NOTICE.md)
 
 ## Google Wallet Android codelab 素材
 

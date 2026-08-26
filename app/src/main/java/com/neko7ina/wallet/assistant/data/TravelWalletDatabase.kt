@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredTravelDocument::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TravelWalletDatabase : RoomDatabase() {
@@ -34,6 +34,18 @@ abstract class TravelWalletDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "DROP INDEX index_travel_documents_providerCode_reservationReference",
+                )
+                database.execSQL(
+                    "CREATE INDEX index_travel_documents_providerCode_reservationReference " +
+                        "ON travel_documents(providerCode, reservationReference)",
+                )
+            }
+        }
+
         @Volatile
         private var instance: TravelWalletDatabase? = null
 
@@ -42,7 +54,7 @@ abstract class TravelWalletDatabase : RoomDatabase() {
                 context.applicationContext,
                 TravelWalletDatabase::class.java,
                 "travel-wallet.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also { instance = it }
         }

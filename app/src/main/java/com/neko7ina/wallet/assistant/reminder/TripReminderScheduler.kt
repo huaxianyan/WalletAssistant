@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Build
 import com.neko7ina.wallet.assistant.BuildConfig
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.settings.AppPreferences
 import java.time.Duration
@@ -26,6 +27,10 @@ class TripReminderScheduler(context: Context) {
         Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
 
     fun schedule(document: TravelDocument) {
+        if (document.status != TravelDocumentStatus.CONFIRMED) {
+            cancel(document.stableId())
+            return
+        }
         if (!canScheduleExactReminders()) return
         val departure = document.segments.minOf { it.departureTime.toInstant() }
         if (!departure.isAfter(Instant.now())) {

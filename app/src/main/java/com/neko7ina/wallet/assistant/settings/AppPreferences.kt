@@ -1,6 +1,10 @@
 package com.neko7ina.wallet.assistant.settings
 
 import android.content.Context
+import com.neko7ina.wallet.assistant.email.ImapSyncCheckpoint
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 enum class ThemeMode {
     SYSTEM,
@@ -21,6 +25,17 @@ object ReminderTimingConstraints {
 
 class AppPreferences(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    init {
+        val obsoleteKeys = preferences.all.keys.filter {
+            it.startsWith("gmail_processed_") || it.startsWith("imap_processed_")
+        }
+        if (obsoleteKeys.isNotEmpty()) {
+            preferences.edit().apply {
+                obsoleteKeys.forEach(::remove)
+            }.apply()
+        }
+    }
 
     var newTripsReminderEnabled: Boolean
         get() = preferences.getBoolean(KEY_NEW_TRIPS_REMINDER, false)
@@ -75,6 +90,45 @@ class AppPreferences(context: Context) {
                 ),
             ).apply()
         }
+
+    fun imapSyncCheckpoint(
+        accountFingerprint: String,
+        parserVersion: Int,
+        ignoreDepartedTrips: Boolean,
+    ): ImapSyncCheckpoint? {
+        val value = preferences.getString(
+            imapCheckpointKey(accountFingerprint, parserVersion, ignoreDepartedTrips),
+            null,
+        ) ?: return null
+        return runCatching { Json.decodeFromString<ImapSyncCheckpoint>(value) }.getOrNull()
+    }
+
+    fun saveImapSyncCheckpoint(
+        accountFingerprint: String,
+        parserVersion: Int,
+        ignoreDepartedTrips: Boolean,
+        checkpoint: ImapSyncCheckpoint,
+    ) {
+        preferences.edit().putString(
+            imapCheckpointKey(accountFingerprint, parserVersion, ignoreDepartedTrips),
+            Json.encodeToString(checkpoint),
+        ).apply()
+    }
+
+    fun clearImapSyncCheckpoints(accountFingerprint: String) {
+        val prefix = "imap_checkpoint_${accountFingerprint}_"
+        val keys = preferences.all.keys.filter { it.startsWith(prefix) }
+        if (keys.isNotEmpty()) {
+            preferences.edit().apply { keys.forEach(::remove) }.apply()
+        }
+    }
+
+    private fun imapCheckpointKey(
+        accountFingerprint: String,
+        parserVersion: Int,
+        ignoreDepartedTrips: Boolean,
+    ): String = "imap_checkpoint_${accountFingerprint}_v${parserVersion}_" +
+        if (ignoreDepartedTrips) "future_only" else "all"
 
     var googleWalletActionVisible: Boolean
         get() = preferences.getBoolean(KEY_GOOGLE_WALLET_VISIBLE, true)

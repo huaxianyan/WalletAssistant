@@ -12,7 +12,16 @@ data class TravelDocument(
     val reservation: Reservation,
     val travelers: List<Traveler>,
     val segments: List<TravelSegment>,
+    val journeyKey: String? = null,
+    val status: TravelDocumentStatus = TravelDocumentStatus.CONFIRMED,
 )
+
+@Serializable
+enum class TravelDocumentStatus {
+    CONFIRMED,
+    RESCHEDULED,
+    REFUNDED,
+}
 
 @Serializable
 enum class TravelDocumentType {
@@ -33,8 +42,8 @@ data class ProviderInfo(
 @Serializable
 data class Reservation(
     val reference: String,
-    @Serializable(with = LocalDateAsStringSerializer::class)
-    val purchasedOn: LocalDate,
+    @Serializable(with = NullableLocalDateAsStringSerializer::class)
+    val purchasedOn: LocalDate?,
     val totalPrice: Money,
 )
 
@@ -75,4 +84,5 @@ data class SeatAssignment(
     val section: String,
     val seat: String,
     val category: String,
+    val status: TravelDocumentStatus = TravelDocumentStatus.CONFIRMED,
 )

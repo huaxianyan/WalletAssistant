@@ -84,20 +84,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import com.neko7ina.wallet.assistant.core.parser.normalizeOcrTextForStructuredParsing
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
+import com.neko7ina.wallet.assistant.email.ImapAccountConfig
+import com.neko7ina.wallet.assistant.email.ImapAccountSummary
+import com.neko7ina.wallet.assistant.email.ImapProviderPreset
 import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
 import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
 import com.neko7ina.wallet.assistant.settings.ThemeMode
@@ -112,7 +120,8 @@ private enum class Screen {
     HOME,
     ARCHIVE,
     SETTINGS,
-    GMAIL_IMPORT,
+    EMAIL_IMPORT,
+    EMAIL_ACCOUNT,
     TEXT_IMPORT,
     SCREENSHOT_IMPORT,
     CONFIRM,
@@ -139,7 +148,6 @@ private enum class WalletAvailability {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TravelWalletApp(
-    requestGmailAuthorization: ((Result<String>) -> Unit) -> Unit,
     checkGoogleWalletAvailability: ((Boolean) -> Unit) -> Unit,
     addToGoogleWallet: (String) -> Unit,
     requestScreenshotRecognition: ((ScreenshotRecognitionResult) -> Unit) -> Unit,
@@ -157,18 +165,21 @@ fun TravelWalletApp(
     val liveStatusMinutes by viewModel.liveStatusMinutes.collectAsStateWithLifecycle()
     val googleWalletActionVisible by viewModel.googleWalletActionVisible.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val gmailImportState by viewModel.gmailImportState.collectAsStateWithLifecycle()
+    val emailImportState by viewModel.emailImportState.collectAsStateWithLifecycle()
+    val emailAccountSummary by viewModel.emailAccountSummary.collectAsStateWithLifecycle()
+    val emailAccountTestState by viewModel.emailAccountTestState.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var emailBody by rememberSaveable { mutableStateOf("") }
     var importMode by rememberSaveable { mutableStateOf(ImportMode.EMAIL) }
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
-    var parsedDocument by remember { mutableStateOf<TravelDocument?>(null) }
+    var parsedDocuments by remember { mutableStateOf(emptyList<TravelDocument>()) }
     var confirmationSource by rememberSaveable { mutableStateOf(Screen.TEXT_IMPORT) }
     var selectedTripId by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedTrip = (documents + archivedDocuments).firstOrNull {
         it.document.stableId() == selectedTripId
     }
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
+    var showEmailDisclosure by rememberSaveable { mutableStateOf(false) }
     var walletAvailability by remember { mutableStateOf(WalletAvailability.CHECKING) }
     val walletPassFactory = remember { GoogleWalletPassFactory() }
     val context = LocalContext.current
@@ -204,15 +215,9 @@ fun TravelWalletApp(
         }
     }
 
-    fun beginGmailImport() {
-        screen = Screen.GMAIL_IMPORT
-        viewModel.beginGmailAuthorization()
-        requestGmailAuthorization { result ->
-            result.fold(
-                onSuccess = viewModel::loadFromGmail,
-                onFailure = { viewModel.gmailAuthorizationFailed() },
-            )
-        }
+    fun beginEmailImport() {
+        screen = Screen.EMAIL_IMPORT
+        viewModel.loadFromEmail()
     }
 
     LaunchedEffect(useDarkTheme) {
@@ -225,7 +230,11 @@ fun TravelWalletApp(
     }
 
     BackHandler(enabled = screen != Screen.HOME) {
-        screen = if (screen == Screen.CONFIRM) confirmationSource else Screen.HOME
+        screen = when (screen) {
+            Screen.CONFIRM -> confirmationSource
+            Screen.EMAIL_ACCOUNT -> Screen.SETTINGS
+            else -> Screen.HOME
+        }
     }
 
     MaterialTheme(colorScheme = colorScheme) {
@@ -267,7 +276,12 @@ fun TravelWalletApp(
                     liveStatusMinutes = liveStatusMinutes,
                     googleWalletActionVisible = googleWalletActionVisible,
                     themeMode = themeMode,
+                    emailAccountSummary = emailAccountSummary,
                     onBack = { screen = Screen.HOME },
+                    onEmailAccountClick = {
+                        viewModel.resetEmailAccountTestState()
+                        screen = Screen.EMAIL_ACCOUNT
+                    },
                     onNewTripsReminderChange = { enabled ->
                         changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
                     },
@@ -279,13 +293,24 @@ fun TravelWalletApp(
                     onThemeModeChange = viewModel::setThemeMode,
                 )
 
-                Screen.GMAIL_IMPORT -> GmailImportScreen(
-                    state = gmailImportState,
+                Screen.EMAIL_IMPORT -> EmailImportScreen(
+                    state = emailImportState,
                     onBack = { screen = Screen.HOME },
-                    onSelect = { document ->
-                        parsedDocument = document
-                        confirmationSource = Screen.GMAIL_IMPORT
+                    onConfirm = { documentsToConfirm ->
+                        parsedDocuments = documentsToConfirm
+                        confirmationSource = Screen.EMAIL_IMPORT
                         screen = Screen.CONFIRM
+                    },
+                )
+
+                Screen.EMAIL_ACCOUNT -> EmailAccountScreen(
+                    existingAccount = emailAccountSummary,
+                    testState = emailAccountTestState,
+                    onBack = { screen = Screen.SETTINGS },
+                    onSave = viewModel::testAndSaveEmailAccount,
+                    onDelete = {
+                        viewModel.deleteEmailAccount()
+                        screen = Screen.SETTINGS
                     },
                 )
 
@@ -314,11 +339,14 @@ fun TravelWalletApp(
                         }
                         when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = textToParse))) {
                             is ParseResult.Success -> {
-                                if (ignoreDepartedTripsOnImport && result.document.hasDeparted()) {
-                                    parsedDocument = null
-                                    parseError = "这趟行程已经出发。如需保留历史行程，请在设置中关闭“忽略已过期行程”。"
+                                val documentsToConfirm = result.documents.filterNot { document ->
+                                    ignoreDepartedTripsOnImport && document.hasDeparted()
+                                }
+                                if (documentsToConfirm.isEmpty()) {
+                                    parsedDocuments = emptyList()
+                                    parseError = "识别出的行程都已经出发。如需保留历史行程，请在设置中关闭“忽略已过期行程”。"
                                 } else {
-                                    parsedDocument = result.document
+                                    parsedDocuments = documentsToConfirm
                                     parseError = null
                                     confirmationSource = Screen.TEXT_IMPORT
                                     screen = Screen.CONFIRM
@@ -341,10 +369,13 @@ fun TravelWalletApp(
                 )
 
                 Screen.CONFIRM -> ConfirmationScreen(
-                    document = requireNotNull(parsedDocument),
+                    documents = parsedDocuments,
                     onBack = { screen = confirmationSource },
                     onSave = {
-                        viewModel.save(requireNotNull(parsedDocument))
+                        viewModel.save(
+                            documents = parsedDocuments,
+                            emailImport = confirmationSource == Screen.EMAIL_IMPORT,
+                        )
                         screen = Screen.HOME
                     },
                 )
@@ -355,9 +386,13 @@ fun TravelWalletApp(
         if (showAddSheet) {
             AddTripSheet(
                 onDismiss = { showAddSheet = false },
-                onGmailImport = {
+                onEmailImport = {
                     showAddSheet = false
-                    beginGmailImport()
+                    if (emailAccountSummary == null) {
+                        showEmailDisclosure = true
+                    } else {
+                        beginEmailImport()
+                    }
                 },
                 onTextImport = {
                     showAddSheet = false
@@ -390,6 +425,37 @@ fun TravelWalletApp(
                                 ).show()
                             }
                         }
+                    }
+                },
+            )
+        }
+
+        if (showEmailDisclosure) {
+            AlertDialog(
+                onDismissRequest = { showEmailDisclosure = false },
+                title = { Text("配置邮箱同步") },
+                text = {
+                    Text(
+                        "邮箱授权码可以让「出行」读取邮箱中的邮件。请使用邮箱提供的专用密码或" +
+                            "客户端授权码，不要填写邮箱登录密码。\n\n" +
+                            "邮箱地址和授权码会加密保存在此设备上，仅用于在收件箱中查找来自 " +
+                            "12306@rails.com.cn 的铁路订单通知。",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showEmailDisclosure = false
+                            viewModel.resetEmailAccountTestState()
+                            screen = Screen.EMAIL_ACCOUNT
+                        },
+                    ) {
+                        Text("继续配置")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEmailDisclosure = false }) {
+                        Text("暂不配置")
                     }
                 },
             )
@@ -460,7 +526,7 @@ private fun HomeScreen(
                             onDismissRequest = { menuExpanded = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("已归档行程") },
+                                text = { Text("历史行程") },
                                 leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -533,7 +599,7 @@ private fun ArchiveScreen(
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = { PageTopBar("已归档行程", onBack) },
+        topBar = { PageTopBar("历史行程", onBack) },
     ) { contentPadding ->
         if (documents.isEmpty()) {
             Box(
@@ -542,7 +608,7 @@ private fun ArchiveScreen(
                     .padding(contentPadding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("还没有归档行程", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("还没有历史行程", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -614,7 +680,9 @@ private fun CompactTripCard(
     modifier: Modifier = Modifier,
 ) {
     val segment = saved.document.segments.first()
-    val seat = segment.seatAssignments.firstOrNull()
+    val seat = segment.seatAssignments.firstOrNull {
+        it.status == TravelDocumentStatus.CONFIRMED
+    } ?: segment.seatAssignments.firstOrNull()
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
@@ -625,11 +693,20 @@ private fun CompactTripCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    segment.serviceNumber,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Column {
+                    Text(
+                        segment.serviceNumber,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (saved.document.status != TravelDocumentStatus.CONFIRMED) {
+                        Text(
+                            saved.document.status.displayName,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
                 Text(
                     segment.departureTime.format(COMPACT_DATE_FORMAT),
                     style = MaterialTheme.typography.bodyMedium,
@@ -677,7 +754,7 @@ private fun TripDetailDialog(
 ) {
     val document = saved.document
     val segment = document.segments.first()
-    val seat = segment.seatAssignments.firstOrNull()
+    val confirmed = document.status == TravelDocumentStatus.CONFIRMED
     val hasDeparted = document.hasDeparted()
     var showDeleteConfirmation by remember(saved.document.stableId()) { mutableStateOf(false) }
     Dialog(
@@ -708,13 +785,25 @@ private fun TripDetailDialog(
                 )
                 DetailRow("出发", segment.departureTime.format(DEPARTURE_FORMAT))
                 segment.arrivalTime?.let { DetailRow("到达", it.format(DEPARTURE_FORMAT)) }
-                DetailRow("座位", seat?.let { "${it.section} 车 ${it.seat}" } ?: "待确认")
-                seat?.category?.let { DetailRow("席别", it) }
-                DetailRow("乘车人", document.travelers.joinToString("、") { it.name })
+                DetailRow(
+                    "座位",
+                    segment.seatAssignments.joinToString("、") { assignment ->
+                        "${assignment.section} 车 ${assignment.seat}" +
+                            if (assignment.status == TravelDocumentStatus.CONFIRMED) {
+                                ""
+                            } else {
+                                "（${assignment.status.displayName}）"
+                            }
+                    }.ifEmpty { "待确认" },
+                )
+                val seatCategories = segment.seatAssignments.map { it.category }.distinct()
+                if (seatCategories.isNotEmpty()) DetailRow("席别", seatCategories.joinToString("、"))
+                DetailRow("乘车人", document.travelers.map { it.name }.distinct().joinToString("、"))
+                if (!confirmed) DetailRow("状态", document.status.displayName)
                 DetailRow("订单", document.reservation.reference)
                 DetailRow("来源", document.provider.name)
 
-                if (!saved.archived) {
+                if (!saved.archived && confirmed) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -742,7 +831,7 @@ private fun TripDetailDialog(
                     }
                 }
 
-                if (onTestReminder != null && !hasDeparted) {
+                if (onTestReminder != null && !hasDeparted && confirmed) {
                     TextButton(
                         onClick = onTestReminder,
                         modifier = Modifier.align(Alignment.End),
@@ -751,7 +840,7 @@ private fun TripDetailDialog(
                     }
                 }
 
-                if (showGoogleWalletAction && !saved.archived) {
+                if (showGoogleWalletAction && !saved.archived && confirmed) {
                     when (walletAvailability) {
                         WalletAvailability.AVAILABLE -> GoogleWalletButton(
                             onClick = onAddToGoogleWallet,
@@ -770,7 +859,7 @@ private fun TripDetailDialog(
                     }
                 }
 
-                if (saved.archived) {
+                if (saved.archived && confirmed) {
                     OutlinedButton(
                         onClick = onRestore,
                         modifier = Modifier
@@ -779,7 +868,7 @@ private fun TripDetailDialog(
                     ) {
                         Text("恢复到我的行程")
                     }
-                } else {
+                } else if (!saved.archived) {
                     OutlinedButton(
                         onClick = onArchive,
                         modifier = Modifier
@@ -829,7 +918,7 @@ private fun TripDetailDialog(
 @Composable
 private fun AddTripSheet(
     onDismiss: () -> Unit,
-    onGmailImport: () -> Unit,
+    onEmailImport: () -> Unit,
     onTextImport: () -> Unit,
     onScreenshotImport: () -> Unit,
 ) {
@@ -840,14 +929,14 @@ private fun AddTripSheet(
             style = MaterialTheme.typography.headlineSmall,
         )
         ListItem(
-            headlineContent = { Text("从 Gmail 导入") },
-            supportingContent = { Text("查找已授权邮箱中的购票成功邮件") },
+            headlineContent = { Text("从邮箱同步") },
+            supportingContent = { Text("通过已配置的邮箱读取铁路订单通知") },
             leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },
-            modifier = Modifier.clickable(onClick = onGmailImport),
+            modifier = Modifier.clickable(onClick = onEmailImport),
         )
         ListItem(
             headlineContent = { Text("粘贴邮件正文") },
-            supportingContent = { Text("手动粘贴购票成功邮件内容") },
+            supportingContent = { Text("手动粘贴 12306 铁路订单通知") },
             leadingContent = { Icon(Icons.Default.ContentPaste, contentDescription = null) },
             modifier = Modifier.clickable(onClick = onTextImport),
         )
@@ -871,7 +960,9 @@ private fun SettingsScreen(
     liveStatusMinutes: Int,
     googleWalletActionVisible: Boolean,
     themeMode: ThemeMode,
+    emailAccountSummary: ImapAccountSummary?,
     onBack: () -> Unit,
+    onEmailAccountClick: () -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
     onIgnoreDepartedTripsOnImportChange: (Boolean) -> Unit,
     onAutoArchiveDepartedTripsChange: (Boolean) -> Unit,
@@ -894,6 +985,20 @@ private fun SettingsScreen(
                     modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 4.dp),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            item {
+                ListItem(
+                    headlineContent = { Text("邮箱同步") },
+                    supportingContent = {
+                        Text(
+                            emailAccountSummary?.let {
+                                "已配置 ${it.emailAddress}"
+                            } ?: "未配置；支持使用 IMAP 专用密码或授权码的邮箱",
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onEmailAccountClick),
                 )
             }
             item {
@@ -1082,19 +1187,218 @@ private fun PageTopBar(title: String, onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GmailImportScreen(
-    state: GmailImportState,
+private fun EmailAccountScreen(
+    existingAccount: ImapAccountSummary?,
+    testState: EmailAccountTestState,
     onBack: () -> Unit,
-    onSelect: (TravelDocument) -> Unit,
+    onSave: (ImapAccountConfig) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var preset by rememberSaveable {
+        mutableStateOf(
+            ImapProviderPreset.entries.firstOrNull { it.host == existingAccount?.host }
+                ?: ImapProviderPreset.CUSTOM,
+        )
+    }
+    var emailAddress by rememberSaveable { mutableStateOf(existingAccount?.emailAddress.orEmpty()) }
+    var username by rememberSaveable { mutableStateOf(existingAccount?.emailAddress.orEmpty()) }
+    var usernameEdited by rememberSaveable { mutableStateOf(false) }
+    var host by rememberSaveable { mutableStateOf(existingAccount?.host.orEmpty()) }
+    var port by rememberSaveable { mutableStateOf("993") }
+    var credential by rememberSaveable { mutableStateOf("") }
+    var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val portNumber = port.toIntOrNull()
+    val canSave = emailAddress.isNotBlank() && username.isNotBlank() && host.isNotBlank() &&
+        portNumber in 1..65535 && credential.isNotBlank() &&
+        testState != EmailAccountTestState.Testing
+
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = { PageTopBar("邮箱配置", onBack) },
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+        ) {
+            Text(
+                "请使用邮箱提供的专用密码或客户端授权码，不要填写邮箱登录密码。" +
+                    "当前只支持使用 TLS 的 IMAP 服务器。",
+            )
+            Text(
+                "邮箱服务商",
+                modifier = Modifier.padding(top = 20.dp),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            ImapProviderPreset.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            preset = option
+                            option.host?.let { host = it }
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = preset == option,
+                        onClick = {
+                            preset = option
+                            option.host?.let { host = it }
+                        },
+                    )
+                    Text(option.displayName)
+                }
+            }
+            Text(
+                when (preset) {
+                    ImapProviderPreset.GMAIL -> "Gmail 需要先开启两步验证，并在 Google 账号中创建应用专用密码。"
+                    ImapProviderPreset.QQ_MAIL -> "请先在 QQ 邮箱设置中开启 IMAP 服务并生成授权码。"
+                    ImapProviderPreset.NETEASE_163,
+                    ImapProviderPreset.NETEASE_126,
+                    -> "请先在网易邮箱设置中开启 IMAP 服务并生成客户端授权码。"
+                    ImapProviderPreset.CUSTOM -> "请向邮箱服务商确认 IMAP 服务器、端口和专用凭据。"
+                },
+                modifier = Modifier.padding(bottom = 12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (preset == ImapProviderPreset.GMAIL) {
+                TextButton(
+                    onClick = { uriHandler.openUri("https://myaccount.google.com/apppasswords") },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("打开应用专用密码设置")
+                }
+            }
+            OutlinedTextField(
+                value = emailAddress,
+                onValueChange = {
+                    emailAddress = it.trim()
+                    if (!usernameEdited) username = emailAddress
+                },
+                label = { Text("邮箱地址") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = username,
+                onValueChange = {
+                    username = it.trim()
+                    usernameEdited = true
+                },
+                label = { Text("IMAP 用户名") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            OutlinedTextField(
+                value = host,
+                onValueChange = { host = it.trim() },
+                label = { Text("IMAP 服务器") },
+                singleLine = true,
+                enabled = preset == ImapProviderPreset.CUSTOM,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            OutlinedTextField(
+                value = port,
+                onValueChange = { port = it.filter(Char::isDigit) },
+                label = { Text("端口") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            OutlinedTextField(
+                value = credential,
+                onValueChange = { credential = it },
+                label = { Text("专用密码或授权码") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            when (testState) {
+                EmailAccountTestState.Idle -> Unit
+                EmailAccountTestState.Testing -> Text(
+                    "正在测试连接…",
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                EmailAccountTestState.Success -> Text(
+                    "连接成功，邮箱配置已保存。",
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                is EmailAccountTestState.Error -> Text(
+                    testState.message,
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Button(
+                onClick = {
+                    onSave(
+                        ImapAccountConfig(
+                            emailAddress = emailAddress,
+                            username = username,
+                            host = host,
+                            port = requireNotNull(portNumber),
+                            credential = if (preset == ImapProviderPreset.CUSTOM) {
+                                credential
+                            } else {
+                                credential.filterNot(Char::isWhitespace)
+                            },
+                        ),
+                    )
+                },
+                enabled = canSave,
+                modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+            ) {
+                Text(if (testState == EmailAccountTestState.Testing) "正在测试…" else "测试并保存")
+            }
+            if (existingAccount != null) {
+                TextButton(
+                    onClick = { showDeleteConfirmation = true },
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
+                ) {
+                    Text("删除邮箱配置", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("删除邮箱配置？") },
+            text = { Text("邮箱地址、授权码和同步记录将从此设备移除。") },
+            confirmButton = {
+                TextButton(onClick = onDelete) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmailImportScreen(
+    state: EmailImportState,
+    onBack: () -> Unit,
+    onConfirm: (List<TravelDocument>) -> Unit,
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = { PageTopBar("从 Gmail 导入", onBack) },
+        topBar = { PageTopBar("从邮箱同步", onBack) },
     ) { contentPadding ->
         when (state) {
-            GmailImportState.Idle,
-            GmailImportState.Authorizing,
-            GmailImportState.Loading,
+            EmailImportState.Idle,
+            EmailImportState.Loading,
             -> Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1104,13 +1408,13 @@ private fun GmailImportScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Text(
-                        if (state == GmailImportState.Loading) "正在查找购票邮件…" else "正在连接 Gmail…",
+                        if (state == EmailImportState.Loading) "正在读取铁路订单通知…" else "正在连接邮箱…",
                         modifier = Modifier.padding(top = 16.dp),
                     )
                 }
             }
 
-            is GmailImportState.Error -> Box(
+            is EmailImportState.Error -> Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(contentPadding)
@@ -1127,25 +1431,64 @@ private fun GmailImportScreen(
                 }
             }
 
-            is GmailImportState.Success -> LazyColumn(
+            is EmailImportState.Success -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = contentPadding,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (state.documents.isEmpty()) {
                     item {
-                        Text(
-                            "最近两年没有找到可识别的购票成功邮件。",
-                            modifier = Modifier.padding(24.dp),
-                        )
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Text(
+                                state.warnings.joinToString("\n").ifEmpty {
+                                    "没有找到可导入的铁路行程。已结束行程可能被当前设置过滤。"
+                                },
+                            )
+                            OutlinedButton(
+                                onClick = onBack,
+                                modifier = Modifier.padding(top = 20.dp),
+                            ) {
+                                Text("完成")
+                            }
+                        }
                     }
                 } else {
-                    items(state.documents) { document ->
+                    item {
+                        Text(
+                            "请检查以下行程和状态，确认后将按订单更新本地记录。",
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                        )
+                    }
+                    if (state.warnings.isNotEmpty()) {
+                        item {
+                            Text(
+                                state.warnings.joinToString("\n"),
+                                modifier = Modifier.padding(horizontal = 24.dp),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    items(state.documents, key = { it.stableId() }) { document ->
                         CompactTripCard(
-                            saved = SavedTravelDocument(document, false, false),
-                            onClick = { onSelect(document) },
+                            saved = SavedTravelDocument(
+                                document = document,
+                                reminderEnabled = false,
+                                archived = document.status != TravelDocumentStatus.CONFIRMED,
+                            ),
+                            onClick = {},
                             modifier = Modifier.padding(horizontal = 16.dp),
                         )
+                    }
+                    item {
+                        Button(
+                            onClick = { onConfirm(state.documents) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
+                        ) {
+                            Text("检查并导入 ${state.documents.size} 个行程")
+                        }
                     }
                 }
             }
@@ -1208,7 +1551,7 @@ private fun ImportScreen(
                 if (importMode == ImportMode.SCREENSHOT) {
                     "请检查截图中读取出的文字，修正错误后再识别行程。"
                 } else {
-                    "粘贴购票成功邮件的正文，解析后请核对乘车信息。"
+                    "粘贴 12306 购票、改签、候补或退票邮件正文，解析后请核对行程状态。"
                 },
             )
             OutlinedTextField(
@@ -1253,7 +1596,7 @@ private fun ImportScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfirmationScreen(
-    document: TravelDocument,
+    documents: List<TravelDocument>,
     onBack: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -1268,18 +1611,20 @@ private fun ConfirmationScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
         ) {
-            Text("请确认邮件中的信息是否识别正确。")
-            TripInformation(
-                document = document,
-                modifier = Modifier.padding(top = 16.dp),
-            )
+            Text("请确认行程和状态是否识别正确。保存后会按订单更新本地记录。")
+            documents.forEach { document ->
+                TripInformation(
+                    document = document,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
             Button(
                 onClick = onSave,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 24.dp),
             ) {
-                Text("保存行程")
+                Text(if (documents.size == 1) "保存行程" else "保存 ${documents.size} 个行程")
             }
         }
     }
@@ -1288,7 +1633,6 @@ private fun ConfirmationScreen(
 @Composable
 private fun TripInformation(document: TravelDocument, modifier: Modifier = Modifier) {
     val segment = document.segments.first()
-    val seat = segment.seatAssignments.firstOrNull()
     Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(segment.serviceNumber, style = MaterialTheme.typography.headlineSmall)
@@ -1298,9 +1642,21 @@ private fun TripInformation(document: TravelDocument, modifier: Modifier = Modif
                 style = MaterialTheme.typography.titleLarge,
             )
             DetailRow("出发", segment.departureTime.format(DEPARTURE_FORMAT))
-            DetailRow("座位", seat?.let { "${it.section} 车 ${it.seat}" } ?: "待确认")
-            seat?.category?.let { DetailRow("席别", it) }
-            DetailRow("乘车人", document.travelers.joinToString("、") { it.name })
+            DetailRow(
+                "座位",
+                segment.seatAssignments.joinToString("、") { assignment ->
+                    "${assignment.section} 车 ${assignment.seat}" +
+                        if (assignment.status == TravelDocumentStatus.CONFIRMED) {
+                            ""
+                        } else {
+                            "（${assignment.status.displayName}）"
+                        }
+                }.ifEmpty { "待确认" },
+            )
+            val categories = segment.seatAssignments.map { it.category }.distinct()
+            if (categories.isNotEmpty()) DetailRow("席别", categories.joinToString("、"))
+            DetailRow("乘车人", document.travelers.map { it.name }.distinct().joinToString("、"))
+            DetailRow("状态", document.status.displayName)
             DetailRow("订单", document.reservation.reference)
         }
     }
@@ -1353,6 +1709,13 @@ private fun screenshotParseError(message: String): String = when {
         .replace("邮件内容", "识别文字")
         .replace("邮件显示", "截图文字显示")
 }
+
+private val TravelDocumentStatus.displayName: String
+    get() = when (this) {
+        TravelDocumentStatus.CONFIRMED -> "有效"
+        TravelDocumentStatus.RESCHEDULED -> "已改签"
+        TravelDocumentStatus.REFUNDED -> "已退票"
+    }
 
 private fun formatLeadTime(minutes: Int): String {
     val hours = minutes / 60

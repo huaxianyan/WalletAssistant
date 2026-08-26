@@ -18,6 +18,7 @@ import com.neko7ina.wallet.assistant.MainActivity
 import com.neko7ina.wallet.assistant.R
 import com.neko7ina.wallet.assistant.archive.TripAutoArchiveScheduler
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
 import com.neko7ina.wallet.assistant.data.TravelWalletDatabase
@@ -164,12 +165,14 @@ class TripReminderReceiver : BroadcastReceiver() {
                 data = Uri.parse("walletassistant://reminder/$documentId/$suffix")
                 if (document != null && kind != null && displayEnd != null) {
                     val segment = document.segments.first()
-                    val seat = segment.seatAssignments.firstOrNull()
+                    val seat = segment.seatAssignments
+                        .filter { it.status == TravelDocumentStatus.CONFIRMED }
+                        .joinToString("、") { "${it.section} 车 ${it.seat}" }
                     putExtra(KEY_DOCUMENT_ID, documentId)
                     putExtra(KEY_KIND, kind.name)
                     putExtra(KEY_SERVICE_NUMBER, segment.serviceNumber)
                     putExtra(KEY_ROUTE, "${segment.origin.name} → ${segment.destination.name}")
-                    putExtra(KEY_SEAT, seat?.let { "${it.section} 车 ${it.seat}" }.orEmpty())
+                    putExtra(KEY_SEAT, seat)
                     putExtra(KEY_DEPARTURE, segment.departureTime.format(DEPARTURE_FORMAT))
                     putExtra(KEY_DISPLAY_END, displayEnd.toEpochMilli())
                 }

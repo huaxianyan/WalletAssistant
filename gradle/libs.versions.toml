@@ -7,7 +7,7 @@ compose-bom = "2025.05.01"
 ksp = "2.1.20-1.0.32"
 lifecycle = "2.9.1"
 mlkit-text-recognition = "16.0.1"
-play-services-auth = "21.6.0"
+android-mail = "1.6.7"
 play-services-pay = "16.5.0"
 room = "2.7.1"
 serialization-json = "1.8.1"
@@ -27,7 +27,8 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization-json" }
 mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkit-text-recognition" }
-play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "play-services-auth" }
+android-mail = { module = "com.sun.mail:android-mail", version.ref = "android-mail" }
+android-mail-activation = { module = "com.sun.mail:android-activation", version.ref = "android-mail" }
 play-services-pay = { module = "com.google.android.gms:play-services-pay", version.ref = "play-services-pay" }
 
 [plugins]

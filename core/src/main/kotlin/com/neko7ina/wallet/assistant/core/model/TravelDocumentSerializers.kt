@@ -34,6 +34,18 @@ object LocalDateAsStringSerializer : KSerializer<LocalDate> {
     override fun deserialize(decoder: Decoder): LocalDate = LocalDate.parse(decoder.decodeString())
 }
 
+@OptIn(ExperimentalSerializationApi::class)
+object NullableLocalDateAsStringSerializer : KSerializer<LocalDate?> {
+    override val descriptor: SerialDescriptor = LocalDateAsStringSerializer.descriptor.nullable
+
+    override fun serialize(encoder: Encoder, value: LocalDate?) {
+        encoder.encodeNullableSerializableValue(LocalDateAsStringSerializer, value)
+    }
+
+    override fun deserialize(decoder: Decoder): LocalDate? =
+        decoder.decodeNullableSerializableValue(LocalDateAsStringSerializer)
+}
+
 object ZonedDateTimeAsStringSerializer : KSerializer<ZonedDateTime> {
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("ZonedDateTime", PrimitiveKind.STRING)

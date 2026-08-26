@@ -8,10 +8,7 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "travel_documents",
     indices = [
-        Index(
-            value = ["providerCode", "reservationReference"],
-            unique = true,
-        ),
+        Index(value = ["providerCode", "reservationReference"]),
     ],
 )
 data class StoredTravelDocument(

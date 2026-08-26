@@ -3,9 +3,11 @@ package com.neko7ina.wallet.assistant.core.parser
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 
 data class RawDocument(
+    val sourceId: String? = null,
     val subject: String? = null,
     val sender: String? = null,
     val body: String,
+    val receivedAtEpochMillis: Long? = null,
 )
 
 data class DetectionResult(
@@ -15,7 +17,7 @@ data class DetectionResult(
 
 sealed interface ParseResult {
     data class Success(
-        val document: TravelDocument,
+        val documents: List<TravelDocument>,
         val warnings: List<String> = emptyList(),
     ) : ParseResult
 

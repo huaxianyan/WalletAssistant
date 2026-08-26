@@ -2,6 +2,7 @@ package com.neko7ina.wallet.assistant.wallet
 
 import com.neko7ina.wallet.assistant.BuildConfig
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -22,7 +23,13 @@ class GoogleWalletPassFactory {
         val objectId = "${BuildConfig.WALLET_ISSUER_ID}." +
             "${BuildConfig.WALLET_CLASS_SUFFIX}_${document.stableId()}"
         val segment = document.segments.first()
-        val seat = segment.seatAssignments.first()
+        val confirmedSeats = segment.seatAssignments.filter {
+            it.status == TravelDocumentStatus.CONFIRMED
+        }
+        val seatText = confirmedSeats.joinToString("、") { "${it.section} 车 ${it.seat}" }
+        val travelerText = confirmedSeats.map { seat ->
+            document.travelers.first { it.id == seat.travelerId }.name
+        }.distinct().joinToString("、")
 
         val claims = buildJsonObject {
             put("iss", BuildConfig.WALLET_ISSUER_OWNER_EMAIL)
@@ -80,9 +87,13 @@ class GoogleWalletPassFactory {
                                 "出发时间",
                                 segment.departureTime.format(DEPARTURE_TIME_FORMAT),
                             )
-                            addTextModule("seat", "座位", "${seat.section} 车 ${seat.seat}")
-                            addTextModule("seat_class", "席别", seat.category)
-                            addTextModule("traveler", "乘车人", document.travelers.first().name)
+                            addTextModule("seat", "座位", seatText)
+                            addTextModule(
+                                "seat_class",
+                                "席别",
+                                confirmedSeats.map { it.category }.distinct().joinToString("、"),
+                            )
+                            addTextModule("traveler", "乘车人", travelerText)
                         }
                     }
                 }

@@ -1,6 +1,7 @@
 package com.neko7ina.wallet.assistant.data
 
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
+import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,32 +29,53 @@ class TravelDocumentRepository(
     fun observeArchivedDocuments(): Flow<List<SavedTravelDocument>> =
         dao.observeArchived().map { storedDocuments -> storedDocuments.map(::decode) }
 
-    suspend fun save(
-        document: TravelDocument,
+    suspend fun replaceReservations(
+        documents: List<TravelDocument>,
         defaultReminderEnabled: Boolean,
-    ): SavedTravelDocument {
-        val providerCode = document.provider.code
-        val reservationReference = document.reservation.reference
-        val existing = dao.findByReservation(
-            providerCode = providerCode,
-            reservationReference = reservationReference,
-        )
-        val reminderEnabled = existing?.reminderEnabled ?: defaultReminderEnabled
-        val stored = StoredTravelDocument(
-            id = document.stableId(),
-            providerCode = providerCode,
-            reservationReference = reservationReference,
-            departureEpochMillis = document.segments.minOf {
-                it.departureTime.toInstant().toEpochMilli()
-            },
-            payload = json.encodeToString(document),
-            updatedAtEpochMillis = System.currentTimeMillis(),
-            reminderEnabled = reminderEnabled,
-            archived = existing?.archived ?: false,
-        )
-        dao.upsert(stored)
-        return decode(stored)
-    }
+    ): List<SavedTravelDocument> = documents
+        .groupBy { it.provider.code to it.reservation.reference }
+        .flatMap { (reservationKey, incomingDocuments) ->
+            val (providerCode, reservationReference) = reservationKey
+            val existing = dao.findByReservation(providerCode, reservationReference)
+            val existingById = existing.associateBy(StoredTravelDocument::id)
+            val incomingById = incomingDocuments.associateBy { it.stableId() }
+            val reminderMustMove = existing.any { stored ->
+                stored.reminderEnabled &&
+                    incomingById[stored.id]?.status != TravelDocumentStatus.CONFIRMED
+            }
+            val newConfirmedDocuments = incomingDocuments.filter { document ->
+                document.status == TravelDocumentStatus.CONFIRMED &&
+                    document.stableId() !in existingById
+            }
+            val reminderTransferTarget = newConfirmedDocuments
+                .singleOrNull()
+                ?.stableId()
+                ?.takeIf { reminderMustMove }
+            val now = System.currentTimeMillis()
+            val storedDocuments = incomingDocuments.map { document ->
+                val id = document.stableId()
+                val previous = existingById[id]
+                val confirmed = document.status == TravelDocumentStatus.CONFIRMED
+                StoredTravelDocument(
+                    id = id,
+                    providerCode = providerCode,
+                    reservationReference = reservationReference,
+                    departureEpochMillis = document.segments.minOf {
+                        it.departureTime.toInstant().toEpochMilli()
+                    },
+                    payload = json.encodeToString(document),
+                    updatedAtEpochMillis = now,
+                    reminderEnabled = confirmed && when {
+                        previous != null -> previous.reminderEnabled
+                        id == reminderTransferTarget -> true
+                        else -> defaultReminderEnabled
+                    },
+                    archived = !confirmed || previous?.archived == true,
+                )
+            }
+            dao.replaceReservation(providerCode, reservationReference, storedDocuments)
+            storedDocuments.map(::decode)
+        }
 
     suspend fun setReminderEnabled(id: String, enabled: Boolean): SavedTravelDocument? {
         dao.setReminderEnabled(id, enabled)
@@ -69,8 +91,19 @@ class TravelDocumentRepository(
         dao.deleteById(id)
     }
 
+    suspend fun allDocuments(): List<TravelDocument> =
+        dao.findAll().map { decode(it).document }
+
     suspend fun getReminderEnabledDocuments(): List<TravelDocument> =
         dao.findReminderEnabled().map { decode(it).document }
+
+    suspend fun getByReservations(documents: List<TravelDocument>): List<SavedTravelDocument> =
+        documents
+            .map { it.provider.code to it.reservation.reference }
+            .distinct()
+            .flatMap { (providerCode, reservationReference) ->
+                dao.findByReservation(providerCode, reservationReference).map(::decode)
+            }
 
     suspend fun getActiveDocuments(): List<SavedTravelDocument> = dao.findActive().map(::decode)
 

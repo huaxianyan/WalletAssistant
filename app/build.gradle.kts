@@ -71,13 +71,23 @@ android {
             signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    packaging {
+        resources.pickFirsts += setOf(
+            "META-INF/LICENSE.md",
+            "META-INF/NOTICE.md",
+        )
     }
 }
 
@@ -103,7 +113,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.text.recognition.chinese)
-    implementation(libs.play.services.auth)
+    implementation(libs.android.mail)
+    implementation(libs.android.mail.activation)
     implementation(libs.play.services.pay)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
