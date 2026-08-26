@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
+import com.neko7ina.wallet.assistant.BuildConfig
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.settings.AppPreferences
@@ -113,13 +114,15 @@ class TripReminderScheduler(context: Context) {
         const val DEBUG_STANDARD_SUFFIX = "debug-standard"
         const val DEBUG_LIVE_SUFFIX = "debug-live"
         const val DEBUG_END_SUFFIX = "debug-end"
-        val ALL_SUFFIXES = listOf(
-            STANDARD_SUFFIX,
-            LIVE_SUFFIX,
-            END_SUFFIX,
-            DEBUG_STANDARD_SUFFIX,
-            DEBUG_LIVE_SUFFIX,
-            DEBUG_END_SUFFIX,
-        )
+        val ALL_SUFFIXES = buildList {
+            add(STANDARD_SUFFIX)
+            add(LIVE_SUFFIX)
+            add(END_SUFFIX)
+            if (BuildConfig.DEBUG) {
+                add(DEBUG_STANDARD_SUFFIX)
+                add(DEBUG_LIVE_SUFFIX)
+                add(DEBUG_END_SUFFIX)
+            }
+        }
     }
 }
