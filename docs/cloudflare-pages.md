@@ -43,7 +43,7 @@ https://chuxing.neko7ina.com/terms/
 https://chuxing.neko7ina.com/sitemap.xml
 ```
 
-不要把 `*.pages.dev` 临时地址提交给 Google OAuth 或 Google Wallet，审核材料统一使用自定义域名。
+不要把 `*.pages.dev` 临时地址提交给 Google Wallet，审核材料统一使用自定义域名。
 
 ## Search Console 域名验证
 
@@ -55,19 +55,6 @@ https://chuxing.neko7ina.com/sitemap.xml
    ```
 
 3. 将 Google 提供的 TXT 记录添加到 Cloudflare DNS。
-4. 验证通过后，在 Google Auth Platform 的 Authorized domains 中填写：
-
-   ```text
-   neko7ina.com
-   ```
-
-OAuth 页面填写：
-
-```text
-Application home page: https://chuxing.neko7ina.com/
-Privacy policy: https://chuxing.neko7ina.com/privacy/
-```
-
 ## 发布检查
 
 - 页面不包含统计脚本、广告、表单、Cookie 或远程字体。

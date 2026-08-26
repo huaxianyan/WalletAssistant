@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="出行应用隐私政策：说明 Gmail、截图、OCR、本地行程和 Google Wallet 数据的处理方式。">
+  <meta name="description" content="出行应用隐私政策：说明邮箱同步、截图、OCR、本地行程和 Google Wallet 数据的处理方式。">
   <link rel="canonical" href="https://chuxing.neko7ina.com/privacy/">
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/style.css">
@@ -23,21 +23,21 @@
   <h1>隐私政策</h1>
   <p class="meta">生效日期：2026 年 8 月 26 日</p>
 
-  <p>本隐私政策说明 Android 应用「出行」（以下简称「本应用」）如何访问、使用、存储和传输信息。本应用由 NeKo7inA 独立开发，不运营用于接收或存储用户 Gmail、截图、OCR 文字或行程数据的业务服务器。</p>
+  <p>本隐私政策说明 Android 应用「出行」（以下简称「本应用」）如何访问、使用、存储和传输信息。本应用由 NeKo7inA 独立开发，不运营用于接收或存储用户邮箱、截图、OCR 文字或行程数据的业务服务器。</p>
 
   <h2>1. 适用范围</h2>
   <p>本政策适用于本应用以及位于 <code>chuxing.neko7ina.com</code> 的公开静态网站。本应用与中国国家铁路集团有限公司、12306 或其关联机构不存在隶属、合作或官方授权关系。</p>
 
   <h2>2. 本应用处理的信息</h2>
-  <h3>2.1 Gmail 授权和邮件</h3>
-  <p>只有在用户主动选择「从 Gmail 导入」并完成 Google 授权后，本应用才使用 <code>https://www.googleapis.com/auth/gmail.readonly</code> 权限：</p>
+  <h3>2.1 邮箱配置和邮件</h3>
+  <p>只有在用户主动配置邮箱并选择「从邮箱同步」后，本应用才通过用户提供的 TLS IMAP 服务器读取邮件：</p>
   <ul>
-    <li>分页搜索来自 <code>12306@rails.com.cn</code> 的候选铁路订单通知；</li>
-    <li>读取候选邮件的发件人、主题和正文；</li>
+    <li>邮箱地址、IMAP 用户名、服务器、端口和专用密码或客户端授权码使用 Android Keystore 管理的密钥加密保存在应用私有存储中；</li>
+    <li>搜索来自 <code>12306@rails.com.cn</code> 的候选铁路订单通知，并读取候选邮件的发件人、主题和正文；</li>
     <li>在设备端识别购票、改签、候补兑现和退票信息，并解析车次、路线、出发时间、座位、乘车人、订单标识及车票状态；</li>
-    <li>记录已处理邮件的 Gmail Message ID，以便后续同步只下载新增邮件。</li>
+    <li>记录 IMAP UID，以便后续同步只读取新增邮件。</li>
   </ul>
-  <p>本应用不会发送、修改或删除 Gmail 邮件。OAuth Access Token 仅用于当前授权和 Gmail API 请求，不写入本应用数据库。已处理邮件的 Message ID 保存在应用私有存储中，不包含邮件正文；原始邮件和候选邮件不会上传到开发者运营的服务器。</p>
+  <p>邮箱配置和邮件内容不上传到开发者运营的服务器。应用以只读方式打开邮箱文件夹，不发送、移动或删除邮件。用户可以删除邮箱配置，并在邮箱服务商处撤销对应的专用密码或授权码。</p>
 
   <h3>2.2 粘贴文字和截图</h3>
   <p>用户可以主动粘贴铁路订单通知正文，或通过 Android 系统照片选择器选择截图。本应用不申请访问整个照片库。截图通过应用内置的 ML Kit 中文文字识别模型在设备端处理，截图内容和 OCR 文字不会上传到开发者运营的服务器。</p>
@@ -51,7 +51,7 @@
     <li>乘车人姓名和订单标识；</li>
     <li>车票状态、提醒、归档和自动归档设置。</li>
   </ul>
-  <p>这些信息用于展示行程、去重、提醒、归档和删除，不用于广告、信用评估或用户画像。设备操作系统可能按照用户的 Android 备份设置处理应用数据；NeKo7inA 无法访问用户的系统备份。</p>
+  <p>这些信息用于展示行程、去重、提醒、归档和删除，不用于广告、信用评估或用户画像。本应用关闭 Android 应用数据云备份。</p>
 
   <h3>2.4 Google Wallet</h3>
   <p>Google Wallet 是完全可选的导出目标。只有用户在行程详情中明确点击添加按钮后，本应用才会把已确认的最少行程字段直接提交给 Google Wallet，包括车次、出发站、目的站、出发日期和时间、座位、席别及乘车人姓名。</p>
@@ -60,7 +60,7 @@
   <h3>2.5 权限和设备状态</h3>
   <p>本应用可能请求或使用以下 Android 权限和能力：</p>
   <ul>
-    <li><strong>网络访问：</strong>连接 Google Identity、Gmail API 和 Google Wallet；</li>
+    <li><strong>网络访问：</strong>连接用户配置的 IMAP 邮箱和 Google Wallet；</li>
     <li><strong>通知：</strong>在用户开启单个行程提醒后显示乘车提醒；</li>
     <li><strong>闹钟和提醒：</strong>在用户指定的时间安排精确提醒；</li>
     <li><strong>开机完成：</strong>设备重启后恢复用户已开启的未来行程提醒；</li>
@@ -69,23 +69,21 @@
   <p>提醒默认关闭。拒绝通知或精确提醒权限不会影响本地导入和行程管理。</p>
 
   <h2>3. 数据传输和共享</h2>
-  <p>本应用不会出售、出租或向广告平台、数据经纪商及信息转售方提供用户数据，也不会把 Gmail 数据用于广告或训练机器学习模型。</p>
+  <p>本应用不会出售、出租或向广告平台、数据经纪商及信息转售方提供用户数据，也不会把邮箱数据用于广告或训练机器学习模型。</p>
   <p>仅在以下情况下发生必要的数据传输：</p>
   <ul>
-    <li>用户授权后，本应用直接从设备连接 Google Identity 和 Gmail API；</li>
+    <li>用户主动同步后，本应用直接从设备连接其配置的 IMAP 邮箱服务器；</li>
     <li>用户明确选择添加卡片后，本应用直接从设备向 Google Wallet 提交已确认的最少行程字段；</li>
     <li>为遵守适用法律、保护用户安全或响应合法要求而必须处理信息时。</li>
   </ul>
-  <p>本应用对从 Google APIs 获得的信息的使用和传输遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use requirements。</p>
-  <p lang="en"><strong>出行's use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.</strong></p>
-
   <h2>4. 保存期限和删除</h2>
   <ul>
-    <li>OAuth Access Token、原始邮件、候选邮件、导入截图和 OCR 文字不保存到本应用的行程数据库；用于增量同步的 Gmail Message ID 保留在应用私有存储中，直到用户清除应用数据或卸载应用；</li>
+    <li>邮箱专用密码或授权码以密文保存在应用私有存储中；删除邮箱配置、清除应用数据或卸载应用会移除本地配置；</li>
+    <li>原始邮件、候选邮件、导入截图和 OCR 文字不保存到本应用的行程数据库；用于增量同步的 IMAP UID 保留在应用私有存储中；</li>
     <li>用户确认的行程保留在设备上，直到用户删除行程、清除应用数据或卸载应用；</li>
     <li>归档只改变本地行程状态，不代表删除；</li>
     <li>Google Wallet 卡片需要由用户在 Google Wallet 中单独管理；</li>
-    <li>用户可在 Google 账号的第三方连接设置中撤销本应用的 Gmail 授权。</li>
+    <li>用户可在邮箱服务商处撤销专用密码或授权码。</li>
   </ul>
   <p>由于 NeKo7inA 不持有用户的应用内行程数据库，因此无法从远程服务器查询或删除这些本地数据。</p>
 
@@ -93,10 +91,10 @@
   <p>本网站由 Cloudflare 托管，不设置应用账号、不使用分析脚本、不投放广告、不设置由本站控制的跟踪 Cookie，也不提供收集个人信息的表单。Cloudflare 可能出于安全、运行和网络交付目的处理 IP 地址、User-Agent 和访问日志，具体以 <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare 隐私政策</a>为准。</p>
 
   <h2>6. 数据安全</h2>
-  <p>本应用通过 Android 应用沙箱、本地私有数据库、HTTPS 和 Google 官方授权流程降低未授权访问风险。任何系统都无法保证绝对安全，用户应妥善保护设备锁屏凭据和 Google 账号。</p>
+  <p>本应用通过 Android 应用沙箱、本地私有数据库、Android Keystore、TLS 和系统证书验证降低未授权访问风险。任何系统都无法保证绝对安全，用户应妥善保护设备锁屏凭据和邮箱授权码。</p>
 
   <h2>7. 儿童隐私</h2>
-  <p>本应用不是专门面向儿童设计的服务，也不会基于 Gmail 内容建立儿童用户档案。如果监护人认为儿童在不适当的情况下使用本应用，可以通过下方邮箱联系开发者。</p>
+  <p>本应用不是专门面向儿童设计的服务，也不会基于邮箱内容建立儿童用户档案。如果监护人认为儿童在不适当的情况下使用本应用，可以通过下方邮箱联系开发者。</p>
 
   <h2>8. 政策更新</h2>
   <p>当功能、权限或第三方服务发生实质变化时，本政策会同步更新，并在页面顶部标注新的生效日期。重大变化可能同时在 GitHub Release Notes 中说明。</p>

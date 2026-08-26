@@ -22,12 +22,13 @@
   <h2>安装与更新</h2>
   <p>「出行」不通过 Google Play 分发。正式版本仅通过项目的 <a href="https://github.com/huaxianyan/WalletAssistant/releases">GitHub Releases</a> 发布。请核对 Release Notes 中公布的 APK SHA-256，不要从不明来源下载安装包。</p>
 
-  <h2>Gmail 导入</h2>
+  <h2>邮箱同步</h2>
   <ul>
-    <li>Gmail 导入必须由用户主动发起，并完成 Google 授权；</li>
-    <li>应用只使用只读权限，不会修改、发送或删除邮件；</li>
-    <li>当前识别购票、改签、候补兑现和退票通知；首次同步完成后，后续同步只下载新增邮件；</li>
-    <li>如果未找到行程，可改用粘贴邮件正文或截图导入；</li>
+    <li>邮箱同步需要用户自行配置支持 TLS IMAP 的邮箱；</li>
+    <li>请使用邮箱服务商提供的专用密码或客户端授权码，不要填写邮箱登录密码；</li>
+    <li>当前支持 Gmail、QQ 邮箱、163 邮箱、126 邮箱和自定义 IMAP 服务器，但账号策略可能限制第三方客户端；Gmail 用户可前往 <a href="https://myaccount.google.com/apppasswords">Google 应用专用密码</a>页面检查账号是否可用；</li>
+    <li>当前识别购票、改签、候补兑现和退票通知；首次同步完成后，后续同步只读取新增邮件；</li>
+    <li>如果无法配置邮箱，可改用粘贴邮件正文或截图导入；</li>
     <li>默认忽略已经出发的行程，可以在设置中关闭该过滤；</li>
     <li>解析结果必须由用户确认后才会保存。</li>
   </ul>
@@ -46,13 +47,13 @@
     <li>在行程详情中可以删除单个本地行程；</li>
     <li>在 Android 系统设置中清除应用数据，可以删除全部本地数据；</li>
     <li>卸载应用会移除设备上的应用数据；</li>
-    <li>可以前往 <a href="https://myaccount.google.com/connections">Google 账号的第三方连接</a>撤销 Gmail 授权；</li>
+    <li>可以在应用设置中删除邮箱配置，并在邮箱服务商处撤销专用密码或授权码；</li>
     <li>已添加的 Google Wallet 卡片需要在 Google Wallet 中单独删除。</li>
   </ul>
 
   <h2>问题反馈</h2>
   <p>请发送邮件至 <a href="mailto:7@neko7ina.com">7@neko7ina.com</a>。也可以在 <a href="https://github.com/huaxianyan/WalletAssistant/issues">GitHub Issues</a> 提交不包含隐私信息的问题。</p>
-  <div class="notice"><strong>请勿发送：</strong>Gmail Token、完整邮件、身份证件、动态检票二维码、签名文件、密码或其他敏感凭据。必要时请对订单号、姓名和座位信息进行遮盖。</div>
+  <div class="notice"><strong>请勿发送：</strong>邮箱密码、授权码、完整邮件、身份证件、动态检票二维码、签名文件或其他敏感凭据。必要时请对订单号、姓名和座位信息进行遮盖。</div>
 
   <h2>独立应用声明</h2>
   <p>「出行」由 NeKo7inA 独立开发，与中国国家铁路集团有限公司、12306 或其关联机构不存在隶属、合作或官方授权关系。</p>
