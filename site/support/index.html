@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="出行 Android 应用的安装、权限、数据删除与问题反馈说明。">
+  <link rel="canonical" href="https://chuxing.neko7ina.com/support/">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/style.css">
+  <title>支持｜出行</title>
+</head>
+<body>
+<header class="site-header"><nav class="nav" aria-label="主导航">
+  <a class="brand" href="/"><img src="/assets/icon.svg" alt=""><span>出行</span></a>
+  <div class="nav-links"><a href="/">主页</a><a href="/privacy/">隐私</a><a href="/support/" aria-current="page">支持</a><a href="/terms/">条款</a></div>
+</nav></header>
+<main class="document">
+  <p class="eyebrow">帮助与反馈</p>
+  <h1>支持</h1>
+  <p class="lead">安装、授权或行程导入遇到问题时，可以先查看以下说明，或直接联系开发者。</p>
+
+  <h2>安装与更新</h2>
+  <p>「出行」不通过 Google Play 分发。正式版本仅通过项目的 <a href="https://github.com/huaxianyan/WalletAssistant/releases">GitHub Releases</a> 发布。请核对 Release Notes 中公布的 APK SHA-256，不要从不明来源下载安装包。</p>
+
+  <h2>Gmail 导入</h2>
+  <ul>
+    <li>Gmail 导入必须由用户主动发起，并完成 Google 授权；</li>
+    <li>应用只使用只读权限，不会修改、发送或删除邮件；</li>
+    <li>如果未找到行程，可改用粘贴邮件正文或截图导入；</li>
+    <li>默认忽略已经出发的行程，可以在设置中关闭该过滤；</li>
+    <li>解析结果必须由用户确认后才会保存。</li>
+  </ul>
+
+  <h2>截图导入</h2>
+  <p>应用通过 Android 系统照片选择器读取本次选中的截图，不申请整个照片库权限。OCR 在设备端完成。图片清晰度、裁剪范围和页面格式可能影响结果，识别后请检查文字和行程字段。</p>
+
+  <h2>提醒权限</h2>
+  <p>行程提醒默认关闭。开启提醒时，Android 可能要求通知权限以及「闹钟和提醒」特殊权限。后者用于准时安排乘车提醒，不会在系统时钟应用中创建闹钟。</p>
+
+  <h2>Google Wallet</h2>
+  <p>Google Wallet 是可选导出功能，不承担主要提醒职责。卡片只包含基本乘车信息，不包含动态检票二维码。如果无法添加，请确认设备已安装并登录 Google Wallet，并使用由 NeKo7inA 正式签名的 Release APK。</p>
+
+  <h2>删除数据和撤销授权</h2>
+  <ul>
+    <li>在行程详情中可以删除单个本地行程；</li>
+    <li>在 Android 系统设置中清除应用数据，可以删除全部本地数据；</li>
+    <li>卸载应用会移除设备上的应用数据；</li>
+    <li>可以前往 <a href="https://myaccount.google.com/connections">Google 账号的第三方连接</a>撤销 Gmail 授权；</li>
+    <li>已添加的 Google Wallet 卡片需要在 Google Wallet 中单独删除。</li>
+  </ul>
+
+  <h2>问题反馈</h2>
+  <p>请发送邮件至 <a href="mailto:7@neko7ina.com">7@neko7ina.com</a>。也可以在 <a href="https://github.com/huaxianyan/WalletAssistant/issues">GitHub Issues</a> 提交不包含隐私信息的问题。</p>
+  <div class="notice"><strong>请勿发送：</strong>Gmail Token、完整邮件、身份证件、动态检票二维码、签名文件、密码或其他敏感凭据。必要时请对订单号、姓名和座位信息进行遮盖。</div>
+
+  <h2>独立应用声明</h2>
+  <p>「出行」由 NeKo7inA 独立开发，与中国国家铁路集团有限公司、12306 或其关联机构不存在隶属、合作或官方授权关系。</p>
+</main>
+<footer class="site-footer"><span>© 2026 NeKo7inA</span><div class="footer-links"><a href="/">主页</a><a href="/privacy/">隐私政策</a><a href="/terms/">使用条款</a></div></footer>
+</body>
+</html>

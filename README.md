@@ -33,3 +33,13 @@
 ```
 
 正式 `applicationId` 为 `com.neko7ina.wallet.assistant`。
+
+## 公开站点
+
+应用主页、隐私政策、支持页面和使用条款位于 `site/`，通过 Cloudflare Pages 发布到：
+
+```text
+https://chuxing.neko7ina.com
+```
+
+部署步骤见 [`docs/cloudflare-pages.md`](docs/cloudflare-pages.md)。

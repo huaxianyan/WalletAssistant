@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">出行应用图标</title>
+  <desc id="description">蓝色背景上的白色蜿蜒路径箭头</desc>
+  <rect width="512" height="512" rx="112" fill="#0a8fd8"/>
+  <path d="M124 356c0-58 34-88 82-88h100c51 0 82-31 82-82" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m326 220 62-62 62 62" fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="124" cy="356" r="20" fill="#fff"/>
+</svg>
