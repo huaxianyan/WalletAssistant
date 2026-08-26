@@ -9,7 +9,8 @@ enum class ThemeMode {
 }
 
 object ReminderTimingConstraints {
-    const val STEP_MINUTES = 15
+    const val DEPARTURE_STEP_MINUTES = 15
+    const val LIVE_STEP_MINUTES = 5
     const val DEPARTURE_MIN_MINUTES = 30
     const val DEPARTURE_MAX_MINUTES = 12 * 60
     const val DEPARTURE_DEFAULT_MINUTES = 3 * 60

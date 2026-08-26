@@ -942,6 +942,7 @@ private fun SettingsScreen(
                     minutes = departureReminderMinutes,
                     minimum = ReminderTimingConstraints.DEPARTURE_MIN_MINUTES,
                     maximum = ReminderTimingConstraints.DEPARTURE_MAX_MINUTES,
+                    stepMinutes = ReminderTimingConstraints.DEPARTURE_STEP_MINUTES,
                     onMinutesChange = onDepartureReminderMinutesChange,
                 )
             }
@@ -951,6 +952,7 @@ private fun SettingsScreen(
                     minutes = liveStatusMinutes,
                     minimum = ReminderTimingConstraints.LIVE_MIN_MINUTES,
                     maximum = ReminderTimingConstraints.LIVE_MAX_MINUTES,
+                    stepMinutes = ReminderTimingConstraints.LIVE_STEP_MINUTES,
                     onMinutesChange = onLiveStatusMinutesChange,
                 )
             }
@@ -1000,6 +1002,7 @@ private fun ReminderTimingSlider(
     minutes: Int,
     minimum: Int,
     maximum: Int,
+    stepMinutes: Int,
     onMinutesChange: (Int) -> Unit,
 ) {
     var pendingMinutes by remember(minutes) { mutableStateOf(minutes) }
@@ -1023,16 +1026,15 @@ private fun ReminderTimingSlider(
         Slider(
             value = pendingMinutes.toFloat(),
             onValueChange = { value ->
-                pendingMinutes = (
-                    value / ReminderTimingConstraints.STEP_MINUTES
-                    ).roundToInt() * ReminderTimingConstraints.STEP_MINUTES
+                pendingMinutes = (value / stepMinutes).roundToInt() * stepMinutes
             },
             onValueChangeFinished = { onMinutesChange(pendingMinutes) },
             valueRange = minimum.toFloat()..maximum.toFloat(),
-            steps = (maximum - minimum) / ReminderTimingConstraints.STEP_MINUTES - 1,
+            steps = (maximum - minimum) / stepMinutes - 1,
         )
         Text(
-            "可设置为 ${formatLeadTime(minimum)}至 ${formatLeadTime(maximum)}，每次调整 15 分钟",
+            "可设置为 ${formatLeadTime(minimum)}至 ${formatLeadTime(maximum)}，" +
+                "每次调整 ${formatLeadTime(stepMinutes)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
