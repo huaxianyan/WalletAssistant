@@ -52,3 +52,11 @@ https://chuxing.neko7ina.com
 - [隐私政策](https://chuxing.neko7ina.com/privacy/)
 
 正式 APK 只通过 [GitHub Releases](https://github.com/huaxianyan/WalletAssistant/releases) 发布。
+
+## 许可证
+
+仓库中由 NeKo7inA 持有版权且未另行标注的源代码、资源和文档，按 [GNU GPL version 3 或任何后续版本](LICENSE)授权。
+
+为了允许应用链接和分发当前使用的 Google 专有 SDK，项目依据 GPLv3 第 7 节提供有限的 [Google SDK 链接例外](LICENSE-EXCEPTION.md)。该例外不改变 Google SDK 自身的许可证或服务条款，也不把任何第三方组件重新授权为 GPL。
+
+第三方组件和素材继续适用各自条款，详见[第三方许可声明](THIRD_PARTY_NOTICES.md)。
