@@ -2,6 +2,12 @@
 
 本项目采用语义化版本号。正式安装包通过 [GitHub Releases](https://github.com/huaxianyan/WalletAssistant/releases) 发布。
 
+## [未发布]
+
+### 发布
+
+- 新增 GitHub Actions 签名发布流程，推送 `vX.Y.Z` Tag 后自动测试、构建、校验签名并创建 Release。
+
 ## [1.0.0] - 2026-08-27
 
 首个正式版本。
