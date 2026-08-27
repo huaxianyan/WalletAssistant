@@ -1,5 +1,6 @@
 package com.neko7ina.wallet.assistant.data
 
+import com.neko7ina.wallet.assistant.hasDeparted
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
@@ -59,6 +60,7 @@ class TravelDocumentRepository(
                 val id = document.stableId()
                 val previous = existingById[id]
                 val confirmed = document.status == TravelDocumentStatus.CONFIRMED
+                val departed = document.hasDeparted()
                 StoredTravelDocument(
                     id = id,
                     providerCode = providerCode,
@@ -68,12 +70,12 @@ class TravelDocumentRepository(
                     },
                     payload = json.encodeToString(document),
                     updatedAtEpochMillis = now,
-                    reminderEnabled = confirmed && when {
+                    reminderEnabled = confirmed && !departed && when {
                         previous != null -> previous.reminderEnabled
                         id == reminderTransferTarget -> true
                         else -> defaultReminderEnabled
                     },
-                    archived = !confirmed || previous?.archived == true,
+                    archived = !confirmed || departed || previous?.archived == true,
                 )
             }
             dao.replaceReservation(providerCode, reservationReference, storedDocuments)
@@ -120,7 +122,6 @@ class TravelDocumentRepository(
                 warningsPayload = json.encodeToString(pending.warnings),
                 checkpointPayload = json.encodeToString(pending.checkpoint),
                 accountFingerprint = pending.accountFingerprint,
-                ignoreDepartedTrips = pending.ignoreDepartedTrips,
                 createdAtEpochMillis = pending.createdAtEpochMillis,
             ),
         )
@@ -145,7 +146,6 @@ class TravelDocumentRepository(
             warnings = json.decodeFromString(stored.warningsPayload),
             checkpoint = json.decodeFromString(stored.checkpointPayload),
             accountFingerprint = stored.accountFingerprint,
-            ignoreDepartedTrips = stored.ignoreDepartedTrips,
             createdAtEpochMillis = stored.createdAtEpochMillis,
         )
 }

@@ -18,6 +18,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ImapClient {
+    suspend fun testConnection(config: ImapAccountConfig) = withContext(Dispatchers.IO) {
+        connect(config).use { }
+    }
+
     suspend fun listSelectableFolders(
         config: ImapAccountConfig,
     ): List<ImapFolderOption> = withContext(Dispatchers.IO) {
@@ -40,6 +44,7 @@ class ImapClient {
     suspend fun searchRailwayMessages(
         config: ImapAccountConfig,
         checkpoint: ImapSyncCheckpoint?,
+        allowFullScan: Boolean = true,
         onProgress: (ImapSyncProgress) -> Unit = {},
     ): ImapSearchResult = withContext(Dispatchers.IO) {
         onProgress(ImapSyncProgress.Connecting)
@@ -66,6 +71,9 @@ class ImapClient {
                 val fullScan = checkpoint == null ||
                     checkpoint.uidValidity != uidValidity ||
                     checkpoint.folderName != folder.fullName
+                if (fullScan && checkpoint != null && !allowFullScan) {
+                    throw ImapFullSyncRequiredException()
+                }
                 val candidates = if (fullScan) {
                     folder.search(FromStringTerm(CHINA_RAILWAY_SENDER)).also { messages ->
                         folder.fetch(messages, envelopeAndUidProfile())
@@ -247,3 +255,5 @@ open class ImapAccessException(message: String, cause: Throwable? = null) : Exce
 
 class ImapAuthenticationException(message: String, cause: Throwable? = null) :
     ImapAccessException(message, cause)
+
+class ImapFullSyncRequiredException : Exception()

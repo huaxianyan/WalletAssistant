@@ -12,7 +12,6 @@ data class StoredPendingEmailImport(
     val warningsPayload: String,
     val checkpointPayload: String,
     val accountFingerprint: String,
-    val ignoreDepartedTrips: Boolean,
     val createdAtEpochMillis: Long,
 )
 
@@ -21,7 +20,6 @@ data class PendingEmailImport(
     val warnings: List<String>,
     val checkpoint: ImapSyncCheckpoint,
     val accountFingerprint: String,
-    val ignoreDepartedTrips: Boolean,
     val createdAtEpochMillis: Long,
 )
 

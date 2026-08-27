@@ -4,8 +4,11 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -139,7 +142,9 @@ private enum class ImportMode {
 private val Screen.depth: Int
     get() = when (this) {
         Screen.HOME -> 0
-        Screen.CONFIRM -> 2
+        Screen.CONFIRM,
+        Screen.EMAIL_ACCOUNT,
+        -> 2
         else -> 1
     }
 
@@ -177,7 +182,6 @@ fun TravelWalletApp(
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val archivedDocuments by viewModel.archivedDocuments.collectAsStateWithLifecycle()
     val newTripsReminderEnabled by viewModel.newTripsReminderEnabled.collectAsStateWithLifecycle()
-    val ignoreDepartedTripsOnImport by viewModel.ignoreDepartedTripsOnImport.collectAsStateWithLifecycle()
     val autoArchiveDepartedTrips by viewModel.autoArchiveDepartedTrips.collectAsStateWithLifecycle()
     val departureReminderMinutes by viewModel.departureReminderMinutes.collectAsStateWithLifecycle()
     val liveStatusMinutes by viewModel.liveStatusMinutes.collectAsStateWithLifecycle()
@@ -204,6 +208,7 @@ fun TravelWalletApp(
     }
     var showAddSheet by rememberSaveable { mutableStateOf(false) }
     var showEmailDisclosure by rememberSaveable { mutableStateOf(false) }
+    var showEmailHistoryChoice by rememberSaveable { mutableStateOf(false) }
     var walletAvailability by remember { mutableStateOf(WalletAvailability.CHECKING) }
     val walletPassFactory = remember { GoogleWalletPassFactory() }
     val context = LocalContext.current
@@ -240,8 +245,12 @@ fun TravelWalletApp(
     }
 
     fun beginEmailImport() {
-        screen = Screen.EMAIL_IMPORT
-        viewModel.loadFromEmail()
+        if (viewModel.needsEmailHistoryChoice()) {
+            showEmailHistoryChoice = true
+        } else {
+            screen = Screen.EMAIL_IMPORT
+            viewModel.loadFromEmail()
+        }
     }
 
     LaunchedEffect(openPendingEmailImport, pendingEmailImport) {
@@ -274,11 +283,11 @@ fun TravelWalletApp(
                 targetState = screen,
                 transitionSpec = {
                     if (targetState.depth > initialState.depth) {
-                        (fadeIn() + slideInHorizontally { width -> width / 3 }) togetherWith
-                            (fadeOut() + slideOutHorizontally { width -> -width / 3 })
+                        (fadeIn() + slideInHorizontally { width -> width }) togetherWith
+                            (fadeOut() + slideOutHorizontally { width -> -width })
                     } else {
-                        (fadeIn() + slideInHorizontally { width -> -width / 3 }) togetherWith
-                            (fadeOut() + slideOutHorizontally { width -> width / 3 })
+                        (fadeIn() + slideInHorizontally { width -> -width }) togetherWith
+                            (fadeOut() + slideOutHorizontally { width -> width })
                     }
                 },
                 label = "page transition",
@@ -309,7 +318,6 @@ fun TravelWalletApp(
 
                 Screen.SETTINGS -> SettingsScreen(
                     newTripsReminderEnabled = newTripsReminderEnabled,
-                    ignoreDepartedTripsOnImport = ignoreDepartedTripsOnImport,
                     autoArchiveDepartedTrips = autoArchiveDepartedTrips,
                     departureReminderMinutes = departureReminderMinutes,
                     liveStatusMinutes = liveStatusMinutes,
@@ -355,7 +363,6 @@ fun TravelWalletApp(
                     },
                     onAutomaticEmailSyncIntervalChange =
                         viewModel::setAutomaticEmailSyncInterval,
-                    onIgnoreDepartedTripsOnImportChange = viewModel::setIgnoreDepartedTripsOnImport,
                     onAutoArchiveDepartedTripsChange = viewModel::setAutoArchiveDepartedTrips,
                     onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
                     onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
@@ -380,6 +387,7 @@ fun TravelWalletApp(
                     hasPendingEmailImport = pendingEmailImport != null,
                     onBack = { screen = Screen.SETTINGS },
                     onSave = viewModel::testAndSaveEmailAccount,
+                    onLoadFolders = viewModel::loadEmailFolders,
                     onFolderSelected = viewModel::selectEmailFolder,
                     onDelete = {
                         viewModel.deleteEmailAccount()
@@ -412,18 +420,10 @@ fun TravelWalletApp(
                         }
                         when (val result = ChinaRailwayEmailParser().parse(RawDocument(body = textToParse))) {
                             is ParseResult.Success -> {
-                                val documentsToConfirm = result.documents.filterNot { document ->
-                                    ignoreDepartedTripsOnImport && document.hasDeparted()
-                                }
-                                if (documentsToConfirm.isEmpty()) {
-                                    parsedDocuments = emptyList()
-                                    parseError = "识别出的行程都已经出发。如需保留历史行程，请在设置中关闭“忽略已过期行程”。"
-                                } else {
-                                    parsedDocuments = documentsToConfirm
-                                    parseError = null
-                                    confirmationSource = Screen.TEXT_IMPORT
-                                    screen = Screen.CONFIRM
-                                }
+                                parsedDocuments = result.documents
+                                parseError = null
+                                confirmationSource = Screen.TEXT_IMPORT
+                                screen = Screen.CONFIRM
                             }
 
                             is ParseResult.Failure -> {
@@ -511,7 +511,7 @@ fun TravelWalletApp(
                     Text(
                         "邮箱授权码可以让「出行」读取邮箱中的邮件。请使用邮箱提供的专用密码或" +
                             "客户端授权码，不要填写邮箱登录密码。\n\n" +
-                            "邮箱地址和授权码会加密保存在此设备上，仅用于在收件箱中查找来自 " +
+                            "邮箱地址和授权码会加密保存在此设备上，仅用于在所选文件夹中查找来自 " +
                             "12306@rails.com.cn 的铁路订单通知。",
                     )
                 },
@@ -529,6 +529,41 @@ fun TravelWalletApp(
                 dismissButton = {
                     TextButton(onClick = { showEmailDisclosure = false }) {
                         Text("暂不配置")
+                    }
+                },
+            )
+        }
+
+        if (showEmailHistoryChoice) {
+            AlertDialog(
+                onDismissRequest = { showEmailHistoryChoice = false },
+                title = { Text("同步历史行程？") },
+                text = {
+                    Text(
+                        "邮箱中可能包含已经结束的行程。你可以只同步未出发行程，" +
+                            "或同时导入历史行程并直接归档。",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showEmailHistoryChoice = false
+                            screen = Screen.EMAIL_IMPORT
+                            viewModel.loadFromEmail(includeHistoricalTrips = true)
+                        },
+                    ) {
+                        Text("导入并归档历史")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showEmailHistoryChoice = false
+                            screen = Screen.EMAIL_IMPORT
+                            viewModel.loadFromEmail(includeHistoricalTrips = false)
+                        },
+                    ) {
+                        Text("仅同步未出发")
                     }
                 },
             )
@@ -1044,7 +1079,6 @@ private fun AddTripSheet(
 @Composable
 private fun SettingsScreen(
     newTripsReminderEnabled: Boolean,
-    ignoreDepartedTripsOnImport: Boolean,
     autoArchiveDepartedTrips: Boolean,
     departureReminderMinutes: Int,
     liveStatusMinutes: Int,
@@ -1060,7 +1094,6 @@ private fun SettingsScreen(
     onAutomaticEmailSyncChange: (Boolean) -> Unit,
     onAutomaticEmailSyncIntervalChange: (AutomaticEmailSyncInterval) -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
-    onIgnoreDepartedTripsOnImportChange: (Boolean) -> Unit,
     onAutoArchiveDepartedTripsChange: (Boolean) -> Unit,
     onDepartureReminderMinutesChange: (Int) -> Unit,
     onLiveStatusMinutesChange: (Int) -> Unit,
@@ -1119,17 +1152,23 @@ private fun SettingsScreen(
                     enabled = emailAccountSummary != null,
                 )
             }
-            if (automaticEmailSyncEnabled) {
-                item {
+            item {
+                AnimatedVisibility(
+                    visible = automaticEmailSyncEnabled,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
+                ) {
                     Box {
                         ListItem(
                             headlineContent = { Text("同步间隔") },
                             supportingContent = {
                                 Text(automaticEmailSyncInterval.displayName())
                             },
-                            modifier = Modifier.clickable {
-                                syncIntervalMenuExpanded = true
-                            },
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp)
+                                .clickable {
+                                    syncIntervalMenuExpanded = true
+                                },
                         )
                         DropdownMenu(
                             expanded = syncIntervalMenuExpanded,
@@ -1147,14 +1186,6 @@ private fun SettingsScreen(
                         }
                     }
                 }
-            }
-            item {
-                SettingSwitch(
-                    title = "忽略已过期行程",
-                    description = "导入时跳过已经出发的行程",
-                    checked = ignoreDepartedTripsOnImport,
-                    onCheckedChange = onIgnoreDepartedTripsOnImportChange,
-                )
             }
             item {
                 Text(
@@ -1346,6 +1377,7 @@ private fun EmailAccountScreen(
     hasPendingEmailImport: Boolean,
     onBack: () -> Unit,
     onSave: (ImapAccountConfig) -> Unit,
+    onLoadFolders: () -> Unit,
     onFolderSelected: (String?) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -1363,8 +1395,20 @@ private fun EmailAccountScreen(
     var credential by rememberSaveable { mutableStateOf("") }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
     var folderMenuExpanded by remember { mutableStateOf(false) }
+    var folderRequestInProgress by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val portNumber = port.toIntOrNull()
+    LaunchedEffect(folderState) {
+        when (folderState) {
+            EmailFolderState.Loading -> folderRequestInProgress = true
+            is EmailFolderState.Success -> if (folderRequestInProgress) {
+                folderRequestInProgress = false
+                folderMenuExpanded = true
+            }
+            is EmailFolderState.Error -> folderRequestInProgress = false
+            EmailFolderState.Idle -> Unit
+        }
+    }
     val canSave = emailAddress.isNotBlank() && username.isNotBlank() && host.isNotBlank() &&
         portNumber in 1..65535 && credential.isNotBlank() &&
         testState != EmailAccountTestState.Testing
@@ -1527,46 +1571,51 @@ private fun EmailAccountScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                when (folderState) {
-                    EmailFolderState.Idle,
-                    EmailFolderState.Loading,
-                    -> Text("正在读取邮箱文件夹…")
-
-                    is EmailFolderState.Error -> Text(
-                        folderState.message,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-
-                    is EmailFolderState.Success -> Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { folderMenuExpanded = true },
-                            enabled = !hasPendingEmailImport,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(existingAccount.folderName ?: "自动选择")
-                        }
-                        DropdownMenu(
-                            expanded = folderMenuExpanded,
-                            onDismissRequest = { folderMenuExpanded = false },
-                        ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = onLoadFolders,
+                        enabled = !hasPendingEmailImport && folderState != EmailFolderState.Loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            when {
+                                folderState == EmailFolderState.Loading -> "正在获取邮箱文件夹…"
+                                existingAccount.folderName != null -> existingAccount.folderName
+                                folderState is EmailFolderState.Error -> "重新获取邮箱文件夹"
+                                folderState is EmailFolderState.Success -> "选择邮箱文件夹"
+                                else -> "点击获取邮箱文件夹"
+                            },
+                        )
+                    }
+                    val folders = (folderState as? EmailFolderState.Success)?.folders.orEmpty()
+                    DropdownMenu(
+                        expanded = folderMenuExpanded && folders.isNotEmpty(),
+                        onDismissRequest = { folderMenuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("自动选择") },
+                            onClick = {
+                                folderMenuExpanded = false
+                                onFolderSelected(null)
+                            },
+                        )
+                        folders.forEach { folder ->
                             DropdownMenuItem(
-                                text = { Text("自动选择") },
+                                text = { Text(folder.fullName) },
                                 onClick = {
                                     folderMenuExpanded = false
-                                    onFolderSelected(null)
+                                    onFolderSelected(folder.fullName)
                                 },
                             )
-                            folderState.folders.forEach { folder ->
-                                DropdownMenuItem(
-                                    text = { Text(folder.fullName) },
-                                    onClick = {
-                                        folderMenuExpanded = false
-                                        onFolderSelected(folder.fullName)
-                                    },
-                                )
-                            }
                         }
                     }
+                }
+                if (folderState is EmailFolderState.Error) {
+                    Text(
+                        folderState.message,
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 if (hasPendingEmailImport) {
                     Text(
@@ -1712,7 +1761,8 @@ private fun EmailImportScreen(
                             saved = SavedTravelDocument(
                                 document = document,
                                 reminderEnabled = false,
-                                archived = document.status != TravelDocumentStatus.CONFIRMED,
+                                archived = document.status != TravelDocumentStatus.CONFIRMED ||
+                                    document.hasDeparted(),
                             ),
                             onClick = {},
                             modifier = Modifier.padding(horizontal = 16.dp),

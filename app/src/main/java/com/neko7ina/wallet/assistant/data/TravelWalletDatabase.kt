@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredTravelDocument::class, StoredPendingEmailImport::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class TravelWalletDatabase : RoomDatabase() {
@@ -62,6 +62,32 @@ abstract class TravelWalletDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE pending_email_import_new (" +
+                        "id INTEGER NOT NULL, " +
+                        "documentsPayload TEXT NOT NULL, " +
+                        "warningsPayload TEXT NOT NULL, " +
+                        "checkpointPayload TEXT NOT NULL, " +
+                        "accountFingerprint TEXT NOT NULL, " +
+                        "createdAtEpochMillis INTEGER NOT NULL, " +
+                        "PRIMARY KEY(id))",
+                )
+                database.execSQL(
+                    "INSERT INTO pending_email_import_new (" +
+                        "id, documentsPayload, warningsPayload, checkpointPayload, " +
+                        "accountFingerprint, createdAtEpochMillis) " +
+                        "SELECT id, documentsPayload, warningsPayload, checkpointPayload, " +
+                        "accountFingerprint, createdAtEpochMillis FROM pending_email_import",
+                )
+                database.execSQL("DROP TABLE pending_email_import")
+                database.execSQL(
+                    "ALTER TABLE pending_email_import_new RENAME TO pending_email_import",
+                )
+            }
+        }
+
         @Volatile
         private var instance: TravelWalletDatabase? = null
 
@@ -70,7 +96,13 @@ abstract class TravelWalletDatabase : RoomDatabase() {
                 context.applicationContext,
                 TravelWalletDatabase::class.java,
                 "travel-wallet.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            ).addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
                 .build()
                 .also { instance = it }
         }

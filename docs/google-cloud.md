@@ -27,13 +27,11 @@ Google Wallet Issuer：
 
 ```text
 Issuer ID：3388000000023177100
-状态：Demo Mode
+Publishing Access：已批准
 ```
 
 Google Wallet Business Console 的 `Additional features → App Permissions` 已登记相同包名及 Debug、Release SHA-1。
 
 应用使用 Google Wallet Android SDK 的未签名 Pass 流程，通过包名和 APK 签名证书验证调用方。Issuer Owner 邮箱由本机 `wallet.properties` 注入，不提交到 GitHub；公开 APK 中仍可提取该字段，因此应使用 Issuer 管理账号而非秘密凭据。
 
-真机已经验证 Generic Pass 首次添加成功；再次提交同一 Object ID 时，Google Wallet 会识别为已添加，不创建重复卡片。
-
-正式公开使用前仍需申请 Publishing Access，移除卡片上的 `[仅限测试]` 标记。
+真机已经验证 Generic Pass 首次添加成功；再次提交同一 Object ID 时，Google Wallet 会识别为已添加，不创建重复卡片。Publishing Access 已批准，正式卡片不再显示测试标记。

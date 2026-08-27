@@ -26,44 +26,48 @@ class EmailSyncCoordinator(context: Context) {
         return preferences.imapSyncCheckpoint(
             accountFingerprint = account.fingerprint,
             parserVersion = parser.version,
-            ignoreDepartedTrips = preferences.ignoreDepartedTripsOnImport,
         ) != null
     }
 
     suspend fun sync(
         requireExistingCheckpoint: Boolean,
+        includeHistoricalTrips: Boolean = false,
         onProgress: (EmailSyncProgress) -> Unit = {},
     ): EmailSyncOutcome = syncMutex.withLock {
         repository.pendingEmailImport()?.let { return EmailSyncOutcome.PendingConfirmation(it) }
         val account = accountStore.load() ?: return EmailSyncOutcome.NoAccount
-        val ignoreDepartedTrips = preferences.ignoreDepartedTripsOnImport
         val checkpoint = preferences.imapSyncCheckpoint(
             accountFingerprint = account.fingerprint,
             parserVersion = parser.version,
-            ignoreDepartedTrips = ignoreDepartedTrips,
         )
         if (requireExistingCheckpoint && checkpoint == null) {
             return EmailSyncOutcome.InitialSyncRequired
         }
-        val searchResult = imapClient.searchRailwayMessages(
-            config = account,
-            checkpoint = checkpoint,
-            onProgress = { progress ->
-                onProgress(
-                    when (progress) {
-                        ImapSyncProgress.Connecting -> EmailSyncProgress.Connecting
-                        ImapSyncProgress.CheckingMessages -> EmailSyncProgress.CheckingMessages
-                        is ImapSyncProgress.ReadingRailwayMessage ->
-                            EmailSyncProgress.ReadingRailwayMessages(
-                                completed = progress.completed,
-                                total = progress.total,
-                            )
-                    },
-                )
-            },
-        )
+        val searchResult = try {
+            imapClient.searchRailwayMessages(
+                config = account,
+                checkpoint = checkpoint,
+                allowFullScan = !requireExistingCheckpoint,
+                onProgress = { progress ->
+                    onProgress(
+                        when (progress) {
+                            ImapSyncProgress.Connecting -> EmailSyncProgress.Connecting
+                            ImapSyncProgress.CheckingMessages -> EmailSyncProgress.CheckingMessages
+                            is ImapSyncProgress.ReadingRailwayMessage ->
+                                EmailSyncProgress.ReadingRailwayMessages(
+                                    completed = progress.completed,
+                                    total = progress.total,
+                                )
+                        },
+                    )
+                },
+            )
+        } catch (_: ImapFullSyncRequiredException) {
+            preferences.clearImapSyncCheckpoints(account.fingerprint)
+            return EmailSyncOutcome.InitialSyncRequired
+        }
         if (searchResult.messages.isEmpty()) {
-            saveCheckpoint(account.fingerprint, ignoreDepartedTrips, searchResult.nextCheckpoint)
+            saveCheckpoint(account.fingerprint, searchResult.nextCheckpoint)
             return EmailSyncOutcome.NoNewRailwayMessages
         }
 
@@ -80,10 +84,10 @@ class EmailSyncCoordinator(context: Context) {
         ) {
             is ParseResult.Success -> {
                 val documents = result.documents.filterNot { document ->
-                    ignoreDepartedTrips && document.hasDeparted()
+                    searchResult.fullScan && !includeHistoricalTrips && document.hasDeparted()
                 }
                 if (documents.isEmpty()) {
-                    saveCheckpoint(account.fingerprint, ignoreDepartedTrips, searchResult.nextCheckpoint)
+                    saveCheckpoint(account.fingerprint, searchResult.nextCheckpoint)
                     EmailSyncOutcome.NoRecognizableTrips
                 } else {
                     val pending = PendingEmailImport(
@@ -91,7 +95,6 @@ class EmailSyncCoordinator(context: Context) {
                         warnings = result.warnings,
                         checkpoint = searchResult.nextCheckpoint,
                         accountFingerprint = account.fingerprint,
-                        ignoreDepartedTrips = ignoreDepartedTrips,
                         createdAtEpochMillis = System.currentTimeMillis(),
                     )
                     repository.savePendingEmailImport(pending)
@@ -100,7 +103,7 @@ class EmailSyncCoordinator(context: Context) {
             }
 
             is ParseResult.Failure -> {
-                saveCheckpoint(account.fingerprint, ignoreDepartedTrips, searchResult.nextCheckpoint)
+                saveCheckpoint(account.fingerprint, searchResult.nextCheckpoint)
                 EmailSyncOutcome.NoRecognizableTrips
             }
         }
@@ -109,7 +112,6 @@ class EmailSyncCoordinator(context: Context) {
     suspend fun completePendingImport(pending: PendingEmailImport) = syncMutex.withLock {
         saveCheckpoint(
             accountFingerprint = pending.accountFingerprint,
-            ignoreDepartedTrips = pending.ignoreDepartedTrips,
             checkpoint = pending.checkpoint,
         )
         repository.deletePendingEmailImport()
@@ -117,13 +119,11 @@ class EmailSyncCoordinator(context: Context) {
 
     private fun saveCheckpoint(
         accountFingerprint: String,
-        ignoreDepartedTrips: Boolean,
         checkpoint: ImapSyncCheckpoint,
     ) {
         preferences.saveImapSyncCheckpoint(
             accountFingerprint = accountFingerprint,
             parserVersion = parser.version,
-            ignoreDepartedTrips = ignoreDepartedTrips,
             checkpoint = checkpoint,
         )
     }

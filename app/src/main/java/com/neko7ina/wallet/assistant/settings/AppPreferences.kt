@@ -44,7 +44,9 @@ class AppPreferences(context: Context) {
 
     init {
         val obsoleteKeys = preferences.all.keys.filter {
-            it.startsWith("gmail_processed_") || it.startsWith("imap_processed_")
+            it.startsWith("gmail_processed_") ||
+                it.startsWith("imap_processed_") ||
+                it == "ignore_departed_trips_on_import"
         }
         if (obsoleteKeys.isNotEmpty()) {
             preferences.edit().apply {
@@ -97,12 +99,6 @@ class AppPreferences(context: Context) {
             preferences.edit().putBoolean(KEY_NEW_TRIPS_REMINDER, value).apply()
         }
 
-    var ignoreDepartedTripsOnImport: Boolean
-        get() = preferences.getBoolean(KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT, true)
-        set(value) {
-            preferences.edit().putBoolean(KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT, value).apply()
-        }
-
     var autoArchiveDepartedTrips: Boolean
         get() = preferences.getBoolean(KEY_AUTO_ARCHIVE_DEPARTED_TRIPS, false)
         set(value) {
@@ -148,23 +144,37 @@ class AppPreferences(context: Context) {
     fun imapSyncCheckpoint(
         accountFingerprint: String,
         parserVersion: Int,
-        ignoreDepartedTrips: Boolean,
     ): ImapSyncCheckpoint? {
-        val value = preferences.getString(
-            imapCheckpointKey(accountFingerprint, parserVersion, ignoreDepartedTrips),
-            null,
-        ) ?: return null
-        return runCatching { Json.decodeFromString<ImapSyncCheckpoint>(value) }.getOrNull()
+        val key = imapCheckpointKey(accountFingerprint, parserVersion)
+        preferences.getString(key, null)?.let { value ->
+            return runCatching { Json.decodeFromString<ImapSyncCheckpoint>(value) }.getOrNull()
+        }
+        val legacyPrefix = "imap_checkpoint_${accountFingerprint}_v${parserVersion}_"
+        val migrated = preferences.all
+            .filterKeys { it.startsWith(legacyPrefix) }
+            .values
+            .filterIsInstance<String>()
+            .mapNotNull { value ->
+                runCatching { Json.decodeFromString<ImapSyncCheckpoint>(value) }.getOrNull()
+            }
+            .maxByOrNull(ImapSyncCheckpoint::lastScannedUid)
+            ?: return null
+        preferences.edit().apply {
+            putString(key, Json.encodeToString(migrated))
+            preferences.all.keys
+                .filter { it.startsWith(legacyPrefix) }
+                .forEach(::remove)
+        }.apply()
+        return migrated
     }
 
     fun saveImapSyncCheckpoint(
         accountFingerprint: String,
         parserVersion: Int,
-        ignoreDepartedTrips: Boolean,
         checkpoint: ImapSyncCheckpoint,
     ) {
         preferences.edit().putString(
-            imapCheckpointKey(accountFingerprint, parserVersion, ignoreDepartedTrips),
+            imapCheckpointKey(accountFingerprint, parserVersion),
             Json.encodeToString(checkpoint),
         ).apply()
     }
@@ -180,9 +190,7 @@ class AppPreferences(context: Context) {
     private fun imapCheckpointKey(
         accountFingerprint: String,
         parserVersion: Int,
-        ignoreDepartedTrips: Boolean,
-    ): String = "imap_checkpoint_${accountFingerprint}_v${parserVersion}_" +
-        if (ignoreDepartedTrips) "future_only" else "all"
+    ): String = "imap_checkpoint_${accountFingerprint}_v${parserVersion}"
 
     var googleWalletActionVisible: Boolean
         get() = preferences.getBoolean(KEY_GOOGLE_WALLET_VISIBLE, true)
@@ -207,7 +215,6 @@ class AppPreferences(context: Context) {
         const val KEY_AUTOMATIC_EMAIL_SYNC_STATUS = "automatic_email_sync_status"
         const val KEY_AUTOMATIC_EMAIL_SYNC_STATUS_AT = "automatic_email_sync_status_at"
         const val KEY_NEW_TRIPS_REMINDER = "new_trips_enabled"
-        const val KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT = "ignore_departed_trips_on_import"
         const val KEY_AUTO_ARCHIVE_DEPARTED_TRIPS = "auto_archive_departed_trips"
         const val KEY_DEPARTURE_REMINDER_MINUTES = "departure_reminder_minutes"
         const val KEY_LIVE_STATUS_MINUTES = "live_status_minutes"
