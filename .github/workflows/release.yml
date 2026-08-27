@@ -78,12 +78,13 @@ jobs:
           set -euo pipefail
           apk="app/build/outputs/apk/release/app-release.apk"
           asset="chuxing-${VERSION}.apk"
-          expected_certificate="eafaba2f329a58d091d1641630339f2cc3e81bb72c4e3e048fe5f068fe2be"
+          expected_certificate="eafaba2f329a58d091d1641630339f2cc3e81bb72c4e3e048fe5f068fe2be2be"
           apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           test -x "$apksigner"
           signature_info=$($apksigner verify --print-certs "$apk")
           echo "$signature_info"
-          echo "$signature_info" | grep -Fqi "$expected_certificate"
+          actual_certificate=$(echo "$signature_info" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+          [[ "$actual_certificate" == "$expected_certificate" ]]
           mkdir -p release
           cp "$apk" "release/$asset"
           (cd release && sha256sum "$asset" > "$asset.sha256")

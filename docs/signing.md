@@ -5,7 +5,7 @@
 正式签名证书 SHA-256：
 
 ```text
-eafaba2f329a58d091d1641630339f2cc3e81bb72c4e3e048fe5f068fe2be
+eafaba2f329a58d091d1641630339f2cc3e81bb72c4e3e048fe5f068fe2be2be
 ```
 
 Release KeyStore 和密码不得进入 Git、Issue、Actions 日志或 Release 附件。完整恢复包保存在：
