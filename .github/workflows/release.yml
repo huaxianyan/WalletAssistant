@@ -83,7 +83,7 @@ jobs:
           test -x "$apksigner"
           signature_info=$($apksigner verify --print-certs "$apk")
           echo "$signature_info"
-          actual_certificate=$(echo "$signature_info" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+          actual_certificate=$(echo "$signature_info" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1 | tr -d '\r' | tr '[:upper:]' '[:lower:]')
           [[ "$actual_certificate" == "$expected_certificate" ]]
           mkdir -p release
           cp "$apk" "release/$asset"
