@@ -352,7 +352,7 @@ fun TravelWalletApp(
                                 if (!granted) {
                                     Toast.makeText(
                                         context,
-                                        "自动同步已开启；新行程会显示在首页。",
+                                        "自动同步已开启，新行程会显示在首页。",
                                         Toast.LENGTH_LONG,
                                     ).show()
                                 }
@@ -1125,7 +1125,7 @@ private fun SettingsScreen(
                             emailAccountSummary?.let {
                                 val folder = it.folderName?.let { name -> " · $name" }.orEmpty()
                                 "已配置 ${it.emailAddress}$folder"
-                            } ?: "未配置；支持使用 IMAP 专用密码或授权码的邮箱",
+                            } ?: "未配置，支持使用 IMAP 专用密码或授权码的邮箱",
                         )
                     },
                     leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },

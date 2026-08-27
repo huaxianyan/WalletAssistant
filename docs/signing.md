@@ -18,15 +18,15 @@ Release KeyStore 和密码不得进入 Git、Issue、Actions 日志或 Release �
 
 仓库中的 `.github/workflows/release.yml` 在推送符合 `vX.Y.Z` 格式的 Tag 后执行：
 
-1. 检查 Tag 版本与 `app/build.gradle.kts` 中的 `versionName` 一致；
-2. 从 GitHub `release` Environment Secret 恢复临时签名目录；
-3. 使用 JDK 17 执行 `:core:test` 和 `:app:assembleRelease`；
-4. 使用 `apksigner` 检查 APK 签名证书 SHA-256；
-5. 生成 APK 和对应的 `.sha256` 文件；
-6. 使用 `docs/release-notes-vX.Y.Z.md` 作为 Release Notes；文件不存在时生成最小标题；
-7. 创建公开的 Latest GitHub Release，并上传两个 Asset。
+1. 检查 Tag 版本与 `app/build.gradle.kts` 中的 `versionName` 一致
+2. 从 GitHub `release` Environment Secret 恢复临时签名目录
+3. 使用 JDK 17 执行 `:core:test` 和 `:app:assembleRelease`
+4. 使用 `apksigner` 检查 APK 签名证书 SHA-256
+5. 生成 APK 和对应的 `.sha256` 文件
+6. 使用 `docs/release-notes-vX.Y.Z.md` 作为 Release Notes，文件不存在时生成最小标题
+7. 创建公开的 Latest GitHub Release，并上传两个 Asset
 
-Workflow 不为普通 Push 或 Pull Request 提供签名 Secret。推送 Tag 时创建 Release；从 Actions 页面手动运行时只执行签名构建，并保留 1 天的 Dry-run Artifact，不创建 Release。发布任务使用 GitHub `release` Environment，后续可以在仓库设置中为该 Environment 增加人工审批。
+Workflow 不为普通 Push 或 Pull Request 提供签名 Secret。推送 Tag 时创建 Release，从 Actions 页面手动运行时只执行签名构建，并保留 1 天的 Dry-run Artifact，不创建 Release。发布任务使用 GitHub `release` Environment，后续可以在仓库设置中为该 Environment 增加人工审批。
 
 ### Environment Secret
 
@@ -44,19 +44,19 @@ signing.properties
 wallet.properties
 ```
 
-文件名以 `signing.properties` 中的 `storeFile` 为准。上传 Secret 时不得把 Base64 内容写入仓库文件或终端历史；应通过标准输入直接交给 `gh secret set --env release`。更新 KeyStore、密码或 Wallet 配置后，必须重新生成并替换这个 Secret。
+文件名以 `signing.properties` 中的 `storeFile` 为准。上传 Secret 时不得把 Base64 内容写入仓库文件或终端历史，应通过标准输入直接交给 `gh secret set --env release`。更新 KeyStore、密码或 Wallet 配置后，必须重新生成并替换这个 Secret。
 
 ### 发布新版本
 
-1. 提高 `app/build.gradle.kts` 中的 `versionCode` 和 `versionName`；
-2. 更新 `CHANGELOG.md`；
+1. 提高 `app/build.gradle.kts` 中的 `versionCode` 和 `versionName`
+2. 更新 `CHANGELOG.md`
 3. 新建与 Tag 同名的 Release Notes，例如：
 
    ```text
    docs/release-notes-v1.1.0.md
    ```
 
-4. 完成代码审查和真机验收后提交并推送 `main`；
+4. 完成代码审查和真机验收后提交并推送 `main`
 5. 创建并推送带说明的 Tag：
 
    ```bash
@@ -64,10 +64,10 @@ wallet.properties
    git push origin v1.1.0
    ```
 
-6. 在 GitHub Actions 中确认 Release Workflow 成功；
-7. 从 Release 页面下载 APK，并核对页面正文、`.sha256` Asset 和本地计算值一致。
+6. 在 GitHub Actions 中确认 Release Workflow 成功
+7. 从 Release 页面下载 APK，并核对页面正文、`.sha256` Asset 和本地计算值一致
 
-如果 Action 在创建 Release 前失败，可以修复配置后重新运行。已经公开 Release 后不得用同一版本号替换 APK；应提高版本号重新发布。
+如果 Action 在创建 Release 前失败，可以修复配置后重新运行。Release 公开后不得用同一版本号替换 APK，应提高版本号重新发布。
 
 ## 本机恢复与手动构建
 

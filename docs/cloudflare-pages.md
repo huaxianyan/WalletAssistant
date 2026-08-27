@@ -10,9 +10,9 @@ https://chuxing.neko7ina.com
 
 ## 创建 Pages 项目
 
-1. 登录 Cloudflare Dashboard。
-2. 进入 `Workers & Pages`，选择 `Create application → Pages → Connect to Git`。
-3. 授权并选择 GitHub 仓库 `huaxianyan/WalletAssistant`。
+1. 登录 Cloudflare Dashboard
+2. 进入 `Workers & Pages`，选择 `Create application → Pages → Connect to Git`
+3. 授权并选择 GitHub 仓库 `huaxianyan/WalletAssistant`
 4. 使用以下构建设置：
 
    ```text
@@ -23,7 +23,7 @@ https://chuxing.neko7ina.com
    Root directory: 留空（仓库根目录）
    ```
 
-5. 部署后先通过 Cloudflare 提供的 `*.pages.dev` 地址检查主页、隐私政策、支持页面和使用条款。
+5. 部署后先通过 Cloudflare 提供的 `*.pages.dev` 地址检查主页、隐私政策、支持页面和使用条款
 
 ## 绑定域名
 
@@ -47,18 +47,19 @@ https://chuxing.neko7ina.com/sitemap.xml
 
 ## Search Console 域名验证
 
-1. 使用 Google Cloud 项目 `walletassistantqlbb10jcvuvmbat` 的 Owner 或 Editor 账号登录 Google Search Console。
+1. 使用 Google Cloud 项目 `walletassistantqlbb10jcvuvmbat` 的 Owner 或 Editor 账号登录 Google Search Console
 2. 添加 Domain property：
 
    ```text
    neko7ina.com
    ```
 
-3. 将 Google 提供的 TXT 记录添加到 Cloudflare DNS。
+3. 将 Google 提供的 TXT 记录添加到 Cloudflare DNS
+
 ## 发布检查
 
-- 页面不包含统计脚本、广告、表单、Cookie 或远程字体。
-- `_headers` 配置了 CSP、禁止嵌入及其他安全响应头。
-- 所有正式 URL 都使用 HTTPS 和自定义域名。
-- 页面中的开发者名称为 `NeKo7inA`，联系邮箱为 `7@neko7ina.com`。
-- 功能、权限或数据处理方式变化时，同步更新主页和隐私政策。
+- 页面不包含统计脚本、广告、表单、Cookie 或远程字体
+- `_headers` 配置了 CSP、禁止嵌入及其他安全响应头
+- 所有正式 URL 都使用 HTTPS 和自定义域名
+- 页面中的开发者名称为 `NeKo7inA`，联系邮箱为 `7@neko7ina.com`
+- 功能、权限或数据处理方式变化时，同步更新主页和隐私政策

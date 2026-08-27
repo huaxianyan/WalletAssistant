@@ -2,7 +2,7 @@
 
 「出行」使用以下第三方软件和素材。版本以 [`gradle/libs.versions.toml`](gradle/libs.versions.toml) 及对应的 Gradle 依赖解析结果为准。
 
-项目的 GPLv3 许可不替代、不扩展也不重新声明这些第三方组件的许可证或服务条款。允许链接 Google SDK 的附加许可仅见 [`LICENSE-EXCEPTION.md`](LICENSE-EXCEPTION.md)；Google SDK 仍完全受其自身条款约束。
+项目的 GPLv3 许可不替代、不扩展，也不重新声明这些第三方组件的许可证或服务条款。允许链接 Google SDK 的附加许可仅见 [`LICENSE-EXCEPTION.md`](LICENSE-EXCEPTION.md)，Google SDK 仍完全受其自身条款约束。
 
 ## AndroidX
 

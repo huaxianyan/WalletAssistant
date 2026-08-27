@@ -129,7 +129,7 @@ object EmailSyncNotification {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_china_railway_notification)
             .setContentTitle("发现新的铁路行程")
-            .setContentText("打开“出行”检查并保存")
+            .setContentText("打开「出行」检查并保存")
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
