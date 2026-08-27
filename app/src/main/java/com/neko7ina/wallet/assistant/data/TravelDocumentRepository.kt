@@ -29,6 +29,9 @@ class TravelDocumentRepository(
     fun observeArchivedDocuments(): Flow<List<SavedTravelDocument>> =
         dao.observeArchived().map { storedDocuments -> storedDocuments.map(::decode) }
 
+    fun observePendingEmailImport(): Flow<PendingEmailImport?> =
+        dao.observePendingEmailImport().map { it?.let(::decodePendingEmailImport) }
+
     suspend fun replaceReservations(
         documents: List<TravelDocument>,
         defaultReminderEnabled: Boolean,
@@ -107,6 +110,26 @@ class TravelDocumentRepository(
 
     suspend fun getActiveDocuments(): List<SavedTravelDocument> = dao.findActive().map(::decode)
 
+    suspend fun pendingEmailImport(): PendingEmailImport? =
+        dao.findPendingEmailImport()?.let(::decodePendingEmailImport)
+
+    suspend fun savePendingEmailImport(pending: PendingEmailImport) {
+        dao.upsertPendingEmailImport(
+            StoredPendingEmailImport(
+                documentsPayload = json.encodeToString(pending.documents),
+                warningsPayload = json.encodeToString(pending.warnings),
+                checkpointPayload = json.encodeToString(pending.checkpoint),
+                accountFingerprint = pending.accountFingerprint,
+                ignoreDepartedTrips = pending.ignoreDepartedTrips,
+                createdAtEpochMillis = pending.createdAtEpochMillis,
+            ),
+        )
+    }
+
+    suspend fun deletePendingEmailImport() {
+        dao.deletePendingEmailImport()
+    }
+
     suspend fun archiveIfDeparted(id: String, nowEpochMillis: Long): Boolean =
         dao.archiveIfDeparted(id, nowEpochMillis) > 0
 
@@ -115,4 +138,14 @@ class TravelDocumentRepository(
         reminderEnabled = stored.reminderEnabled,
         archived = stored.archived,
     )
+
+    private fun decodePendingEmailImport(stored: StoredPendingEmailImport): PendingEmailImport =
+        PendingEmailImport(
+            documents = json.decodeFromString(stored.documentsPayload),
+            warnings = json.decodeFromString(stored.warningsPayload),
+            checkpoint = json.decodeFromString(stored.checkpointPayload),
+            accountFingerprint = stored.accountFingerprint,
+            ignoreDepartedTrips = stored.ignoreDepartedTrips,
+            createdAtEpochMillis = stored.createdAtEpochMillis,
+        )
 }

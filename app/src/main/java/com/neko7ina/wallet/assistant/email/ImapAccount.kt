@@ -10,17 +10,26 @@ data class ImapAccountConfig(
     val host: String,
     val port: Int,
     val credential: String,
+    val folderName: String? = null,
 ) {
     val fingerprint: String
         get() = MessageDigest.getInstance("SHA-256")
-            .digest("$emailAddress|$username|$host|$port".toByteArray())
+            .digest(
+                buildString {
+                    append("$emailAddress|$username|$host|$port")
+                    folderName?.let { append("|$it") }
+                }.toByteArray(),
+            )
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 }
 
 data class ImapAccountSummary(
     val emailAddress: String,
     val host: String,
+    val folderName: String?,
 )
+
+data class ImapFolderOption(val fullName: String)
 
 @Serializable
 data class ImapSyncCheckpoint(

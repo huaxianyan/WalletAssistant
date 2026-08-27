@@ -16,8 +16,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import com.neko7ina.wallet.assistant.email.EmailSyncNotification
 import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
 import com.neko7ina.wallet.assistant.screenshot.ScreenshotTextRecognizer
 import com.google.android.gms.pay.Pay
@@ -31,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private var screenshotRecognitionCallback: ((ScreenshotRecognitionResult) -> Unit)? = null
     private var notificationPermissionCallback: ((Boolean) -> Unit)? = null
     private var exactReminderPermissionCallback: ((Boolean) -> Unit)? = null
+    private val openPendingEmailImport = mutableStateOf(false)
 
     private val exactReminderPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -62,6 +65,10 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openPendingEmailImport.value = intent.getBooleanExtra(
+            EmailSyncNotification.EXTRA_OPEN_PENDING_EMAIL_IMPORT,
+            false,
+        )
         enableEdgeToEdge()
         setContent {
             TravelWalletApp(
@@ -70,8 +77,17 @@ class MainActivity : ComponentActivity() {
                 requestScreenshotRecognition = ::requestScreenshotRecognition,
                 requestNotificationPermission = ::requestNotificationPermission,
                 requestExactReminderPermission = ::requestExactReminderPermission,
+                openPendingEmailImport = openPendingEmailImport.value,
+                onPendingEmailImportOpened = { openPendingEmailImport.value = false },
                 setDarkSystemBars = ::setDarkSystemBars,
             )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EmailSyncNotification.EXTRA_OPEN_PENDING_EMAIL_IMPORT, false)) {
+            openPendingEmailImport.value = true
         }
     }
 

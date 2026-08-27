@@ -3,6 +3,7 @@ package com.neko7ina.wallet.assistant.email
 import android.text.Html
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import java.util.Properties
+import javax.mail.AuthenticationFailedException
 import javax.mail.BodyPart
 import javax.mail.FetchProfile
 import javax.mail.Folder
@@ -17,16 +18,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ImapClient {
-    suspend fun testConnection(config: ImapAccountConfig) = withContext(Dispatchers.IO) {
-        connect(config).use { }
+    suspend fun listSelectableFolders(
+        config: ImapAccountConfig,
+    ): List<ImapFolderOption> = withContext(Dispatchers.IO) {
+        connect(config).use { connection ->
+            connection.store.defaultFolder.list("*")
+                .filter { folder ->
+                    runCatching { folder.exists() && folder.type and Folder.HOLDS_MESSAGES != 0 }
+                        .getOrDefault(false)
+                }
+                .map { ImapFolderOption(it.fullName) }
+                .distinctBy(ImapFolderOption::fullName)
+                .sortedWith(
+                    compareBy<ImapFolderOption> {
+                        !it.fullName.equals(INBOX_FOLDER, ignoreCase = true)
+                    }.thenBy { it.fullName.lowercase() },
+                )
+        }
     }
 
     suspend fun searchRailwayMessages(
         config: ImapAccountConfig,
         checkpoint: ImapSyncCheckpoint?,
+        onProgress: (ImapSyncProgress) -> Unit = {},
     ): ImapSearchResult = withContext(Dispatchers.IO) {
+        onProgress(ImapSyncProgress.Connecting)
         connect(config).use { connection ->
-            val folder = railwaySearchFolder(connection.store, checkpoint?.folderName)
+            onProgress(ImapSyncProgress.CheckingMessages)
+            val folder = railwaySearchFolder(
+                store = connection.store,
+                configuredFolderName = config.folderName,
+                savedAutomaticFolderName = checkpoint?.folderName,
+            )
             folder.open(Folder.READ_ONLY)
             try {
                 val uidFolder = folder as? UIDFolder
@@ -58,9 +81,24 @@ class ImapClient {
                     }.filter { it.isFromChinaRailway() }.toTypedArray()
                 }
                 ImapSearchResult(
-                    messages = candidates.mapNotNull { message ->
+                    messages = candidates.mapIndexedNotNull { index, message ->
+                        onProgress(
+                            ImapSyncProgress.ReadingRailwayMessage(
+                                completed = index,
+                                total = candidates.size,
+                            ),
+                        )
                         val uid = uidFolder.getUID(message)
                         message.toRawDocument("$uidValidity:$uid")
+                    }.also {
+                        if (candidates.isNotEmpty()) {
+                            onProgress(
+                                ImapSyncProgress.ReadingRailwayMessage(
+                                    completed = candidates.size,
+                                    total = candidates.size,
+                                ),
+                            )
+                        }
                     },
                     nextCheckpoint = ImapSyncCheckpoint(
                         folderName = folder.fullName,
@@ -87,9 +125,22 @@ class ImapClient {
 
     private fun railwaySearchFolder(
         store: javax.mail.Store,
-        savedFolderName: String?,
+        configuredFolderName: String?,
+        savedAutomaticFolderName: String?,
     ): Folder {
-        savedFolderName?.let { name ->
+        configuredFolderName?.let { name ->
+            val folder = store.getFolder(name)
+            if (
+                folder.exists() &&
+                runCatching { folder.type and Folder.HOLDS_MESSAGES != 0 }.getOrDefault(false)
+            ) {
+                return folder
+            }
+            throw ImapAccessException(
+                "无法读取已选择的邮箱文件夹，请在邮箱设置中重新选择。",
+            )
+        }
+        savedAutomaticFolderName?.let { name ->
             store.getFolder(name).takeIf { it.exists() }?.let { return it }
         }
         val allMailFolder = runCatching {
@@ -115,6 +166,12 @@ class ImapClient {
         val store = Session.getInstance(properties).getStore("imaps")
         try {
             store.connect(config.host, config.port, config.username, config.credential)
+        } catch (error: AuthenticationFailedException) {
+            runCatching { store.close() }
+            throw ImapAuthenticationException(
+                "邮箱验证失败，请检查专用密码或授权码。",
+                error,
+            )
         } catch (error: Exception) {
             runCatching { store.close() }
             throw ImapAccessException(
@@ -169,9 +226,15 @@ class ImapClient {
         const val ALL_MAIL_ATTRIBUTE = "\\All"
         const val CHINA_RAILWAY_SENDER = "12306@rails.com.cn"
         const val CONNECTION_TIMEOUT_MILLIS = 15_000
-        const val READ_TIMEOUT_MILLIS = 30_000
+        const val READ_TIMEOUT_MILLIS = 60_000
         const val WRITE_TIMEOUT_MILLIS = 30_000
     }
+}
+
+sealed interface ImapSyncProgress {
+    data object Connecting : ImapSyncProgress
+    data object CheckingMessages : ImapSyncProgress
+    data class ReadingRailwayMessage(val completed: Int, val total: Int) : ImapSyncProgress
 }
 
 data class ImapSearchResult(
@@ -180,4 +243,7 @@ data class ImapSearchResult(
     val fullScan: Boolean,
 )
 
-class ImapAccessException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class ImapAccessException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+class ImapAuthenticationException(message: String, cause: Throwable? = null) :
+    ImapAccessException(message, cause)

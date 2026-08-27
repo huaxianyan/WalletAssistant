@@ -103,13 +103,17 @@ import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import com.neko7ina.wallet.assistant.core.parser.normalizeOcrTextForStructuredParsing
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
+import com.neko7ina.wallet.assistant.email.EmailSyncProgress
 import com.neko7ina.wallet.assistant.email.ImapAccountConfig
 import com.neko7ina.wallet.assistant.email.ImapAccountSummary
 import com.neko7ina.wallet.assistant.email.ImapProviderPreset
 import com.neko7ina.wallet.assistant.screenshot.ScreenshotRecognitionResult
+import com.neko7ina.wallet.assistant.settings.AutomaticEmailSyncInterval
+import com.neko7ina.wallet.assistant.settings.AutomaticEmailSyncStatus
 import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
 import com.neko7ina.wallet.assistant.settings.ThemeMode
 import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
+import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -139,6 +143,18 @@ private val Screen.depth: Int
         else -> 1
     }
 
+private fun formatSyncTime(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
+    .atZone(ZoneId.systemDefault())
+    .format(DateTimeFormatter.ofPattern("M 月 d 日 HH:mm"))
+
+private fun AutomaticEmailSyncInterval.displayName(): String = when (this) {
+    AutomaticEmailSyncInterval.ONE_HOUR -> "每 1 小时"
+    AutomaticEmailSyncInterval.THREE_HOURS -> "每 3 小时"
+    AutomaticEmailSyncInterval.SIX_HOURS -> "每 6 小时"
+    AutomaticEmailSyncInterval.TWELVE_HOURS -> "每 12 小时"
+    AutomaticEmailSyncInterval.TWENTY_FOUR_HOURS -> "每 24 小时"
+}
+
 private enum class WalletAvailability {
     CHECKING,
     AVAILABLE,
@@ -153,6 +169,8 @@ fun TravelWalletApp(
     requestScreenshotRecognition: ((ScreenshotRecognitionResult) -> Unit) -> Unit,
     requestNotificationPermission: ((Boolean) -> Unit) -> Unit,
     requestExactReminderPermission: ((Boolean) -> Unit) -> Unit,
+    openPendingEmailImport: Boolean,
+    onPendingEmailImportOpened: () -> Unit,
     setDarkSystemBars: (Boolean) -> Unit,
     viewModel: TravelWalletViewModel = viewModel(),
 ) {
@@ -168,6 +186,12 @@ fun TravelWalletApp(
     val emailImportState by viewModel.emailImportState.collectAsStateWithLifecycle()
     val emailAccountSummary by viewModel.emailAccountSummary.collectAsStateWithLifecycle()
     val emailAccountTestState by viewModel.emailAccountTestState.collectAsStateWithLifecycle()
+    val emailFolderState by viewModel.emailFolderState.collectAsStateWithLifecycle()
+    val pendingEmailImport by viewModel.pendingEmailImport.collectAsStateWithLifecycle()
+    val automaticEmailSyncEnabled by viewModel.automaticEmailSyncEnabled.collectAsStateWithLifecycle()
+    val automaticEmailSyncInterval by viewModel.automaticEmailSyncInterval.collectAsStateWithLifecycle()
+    val automaticEmailSyncStatus by viewModel.automaticEmailSyncStatus.collectAsStateWithLifecycle()
+    val automaticEmailSyncStatusAt by viewModel.automaticEmailSyncStatusAt.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
     var emailBody by rememberSaveable { mutableStateOf("") }
     var importMode by rememberSaveable { mutableStateOf(ImportMode.EMAIL) }
@@ -220,6 +244,13 @@ fun TravelWalletApp(
         viewModel.loadFromEmail()
     }
 
+    LaunchedEffect(openPendingEmailImport, pendingEmailImport) {
+        if (openPendingEmailImport && pendingEmailImport != null) {
+            viewModel.showPendingEmailImport()
+            screen = Screen.EMAIL_IMPORT
+            onPendingEmailImportOpened()
+        }
+    }
     LaunchedEffect(useDarkTheme) {
         setDarkSystemBars(useDarkTheme)
     }
@@ -255,11 +286,19 @@ fun TravelWalletApp(
                 when (targetScreen) {
                 Screen.HOME -> HomeScreen(
                     documents = documents,
+                    hasPendingEmailImport = pendingEmailImport != null,
+                    onPendingEmailImportClick = {
+                        viewModel.showPendingEmailImport()
+                        screen = Screen.EMAIL_IMPORT
+                    },
                     onTripClick = { selectedTripId = it.document.stableId() },
                     onSwipeArchive = { viewModel.setArchived(it, true) },
                     onAddClick = { showAddSheet = true },
                     onArchiveClick = { screen = Screen.ARCHIVE },
-                    onSettingsClick = { screen = Screen.SETTINGS },
+                    onSettingsClick = {
+                        viewModel.refreshAutomaticEmailSyncStatus()
+                        screen = Screen.SETTINGS
+                    },
                 )
 
                 Screen.ARCHIVE -> ArchiveScreen(
@@ -277,6 +316,10 @@ fun TravelWalletApp(
                     googleWalletActionVisible = googleWalletActionVisible,
                     themeMode = themeMode,
                     emailAccountSummary = emailAccountSummary,
+                    automaticEmailSyncEnabled = automaticEmailSyncEnabled,
+                    automaticEmailSyncInterval = automaticEmailSyncInterval,
+                    automaticEmailSyncStatus = automaticEmailSyncStatus,
+                    automaticEmailSyncStatusAt = automaticEmailSyncStatusAt,
                     onBack = { screen = Screen.HOME },
                     onEmailAccountClick = {
                         viewModel.resetEmailAccountTestState()
@@ -285,6 +328,33 @@ fun TravelWalletApp(
                     onNewTripsReminderChange = { enabled ->
                         changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
                     },
+                    onAutomaticEmailSyncChange = { enabled ->
+                        fun applyChange() {
+                            if (!viewModel.setAutomaticEmailSyncEnabled(enabled)) {
+                                Toast.makeText(
+                                    context,
+                                    "请先完成一次手动邮箱同步。",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                        if (enabled) {
+                            requestNotificationPermission { granted ->
+                                applyChange()
+                                if (!granted) {
+                                    Toast.makeText(
+                                        context,
+                                        "自动同步已开启；新行程会显示在首页。",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            }
+                        } else {
+                            applyChange()
+                        }
+                    },
+                    onAutomaticEmailSyncIntervalChange =
+                        viewModel::setAutomaticEmailSyncInterval,
                     onIgnoreDepartedTripsOnImportChange = viewModel::setIgnoreDepartedTripsOnImport,
                     onAutoArchiveDepartedTripsChange = viewModel::setAutoArchiveDepartedTrips,
                     onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
@@ -306,8 +376,11 @@ fun TravelWalletApp(
                 Screen.EMAIL_ACCOUNT -> EmailAccountScreen(
                     existingAccount = emailAccountSummary,
                     testState = emailAccountTestState,
+                    folderState = emailFolderState,
+                    hasPendingEmailImport = pendingEmailImport != null,
                     onBack = { screen = Screen.SETTINGS },
                     onSave = viewModel::testAndSaveEmailAccount,
+                    onFolderSelected = viewModel::selectEmailFolder,
                     onDelete = {
                         viewModel.deleteEmailAccount()
                         screen = Screen.SETTINGS
@@ -504,6 +577,8 @@ fun TravelWalletApp(
 @Composable
 private fun HomeScreen(
     documents: List<SavedTravelDocument>,
+    hasPendingEmailImport: Boolean,
+    onPendingEmailImportClick: () -> Unit,
     onTripClick: (SavedTravelDocument) -> Unit,
     onSwipeArchive: (SavedTravelDocument) -> Unit,
     onAddClick: () -> Unit,
@@ -552,7 +627,7 @@ private fun HomeScreen(
             }
         },
     ) { contentPadding ->
-        if (documents.isEmpty()) {
+        if (documents.isEmpty() && !hasPendingEmailImport) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -576,6 +651,21 @@ private fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item { Spacer(Modifier.height(4.dp)) }
+                if (hasPendingEmailImport) {
+                    item {
+                        ListItem(
+                            headlineContent = { Text("有新的铁路行程等待确认") },
+                            supportingContent = { Text("检查后保存到我的行程") },
+                            leadingContent = {
+                                Icon(Icons.Default.Email, contentDescription = null)
+                            },
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable(onClick = onPendingEmailImportClick),
+                        )
+                    }
+                }
                 items(documents, key = { it.document.stableId() }) { saved ->
                     SwipeToArchiveTripCard(
                         saved = saved,
@@ -961,8 +1051,14 @@ private fun SettingsScreen(
     googleWalletActionVisible: Boolean,
     themeMode: ThemeMode,
     emailAccountSummary: ImapAccountSummary?,
+    automaticEmailSyncEnabled: Boolean,
+    automaticEmailSyncInterval: AutomaticEmailSyncInterval,
+    automaticEmailSyncStatus: AutomaticEmailSyncStatus,
+    automaticEmailSyncStatusAt: Long,
     onBack: () -> Unit,
     onEmailAccountClick: () -> Unit,
+    onAutomaticEmailSyncChange: (Boolean) -> Unit,
+    onAutomaticEmailSyncIntervalChange: (AutomaticEmailSyncInterval) -> Unit,
     onNewTripsReminderChange: (Boolean) -> Unit,
     onIgnoreDepartedTripsOnImportChange: (Boolean) -> Unit,
     onAutoArchiveDepartedTripsChange: (Boolean) -> Unit,
@@ -971,6 +1067,7 @@ private fun SettingsScreen(
     onGoogleWalletVisibilityChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
+    var syncIntervalMenuExpanded by remember { mutableStateOf(false) }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = { PageTopBar("设置", onBack) },
@@ -993,13 +1090,63 @@ private fun SettingsScreen(
                     supportingContent = {
                         Text(
                             emailAccountSummary?.let {
-                                "已配置 ${it.emailAddress}"
+                                val folder = it.folderName?.let { name -> " · $name" }.orEmpty()
+                                "已配置 ${it.emailAddress}$folder"
                             } ?: "未配置；支持使用 IMAP 专用密码或授权码的邮箱",
                         )
                     },
                     leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },
                     modifier = Modifier.clickable(onClick = onEmailAccountClick),
                 )
+            }
+            item {
+                SettingSwitch(
+                    title = "自动同步邮箱",
+                    description = when (automaticEmailSyncStatus) {
+                        AutomaticEmailSyncStatus.FAILED -> "上次同步失败，请检查邮箱配置"
+                        AutomaticEmailSyncStatus.INITIAL_SYNC_REQUIRED ->
+                            "请先完成一次手动邮箱同步"
+                        AutomaticEmailSyncStatus.PENDING_CONFIRMATION -> "有行程等待确认"
+                        AutomaticEmailSyncStatus.SUCCESS -> if (automaticEmailSyncStatusAt > 0) {
+                            "上次同步：${formatSyncTime(automaticEmailSyncStatusAt)}"
+                        } else {
+                            "发现新行程时通知你检查并保存"
+                        }
+                        AutomaticEmailSyncStatus.NEVER -> "发现新行程时通知你检查并保存"
+                    },
+                    checked = automaticEmailSyncEnabled,
+                    onCheckedChange = onAutomaticEmailSyncChange,
+                    enabled = emailAccountSummary != null,
+                )
+            }
+            if (automaticEmailSyncEnabled) {
+                item {
+                    Box {
+                        ListItem(
+                            headlineContent = { Text("同步间隔") },
+                            supportingContent = {
+                                Text(automaticEmailSyncInterval.displayName())
+                            },
+                            modifier = Modifier.clickable {
+                                syncIntervalMenuExpanded = true
+                            },
+                        )
+                        DropdownMenu(
+                            expanded = syncIntervalMenuExpanded,
+                            onDismissRequest = { syncIntervalMenuExpanded = false },
+                        ) {
+                            AutomaticEmailSyncInterval.entries.forEach { interval ->
+                                DropdownMenuItem(
+                                    text = { Text(interval.displayName()) },
+                                    onClick = {
+                                        syncIntervalMenuExpanded = false
+                                        onAutomaticEmailSyncIntervalChange(interval)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
             item {
                 SettingSwitch(
@@ -1152,6 +1299,7 @@ private fun SettingSwitch(
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
@@ -1168,7 +1316,11 @@ private fun SettingSwitch(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+        )
     }
 }
 
@@ -1190,8 +1342,11 @@ private fun PageTopBar(title: String, onBack: () -> Unit) {
 private fun EmailAccountScreen(
     existingAccount: ImapAccountSummary?,
     testState: EmailAccountTestState,
+    folderState: EmailFolderState,
+    hasPendingEmailImport: Boolean,
     onBack: () -> Unit,
     onSave: (ImapAccountConfig) -> Unit,
+    onFolderSelected: (String?) -> Unit,
     onDelete: () -> Unit,
 ) {
     var preset by rememberSaveable {
@@ -1207,6 +1362,7 @@ private fun EmailAccountScreen(
     var port by rememberSaveable { mutableStateOf("993") }
     var credential by rememberSaveable { mutableStateOf("") }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    var folderMenuExpanded by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val portNumber = port.toIntOrNull()
     val canSave = emailAddress.isNotBlank() && username.isNotBlank() && host.isNotBlank() &&
@@ -1349,6 +1505,7 @@ private fun EmailAccountScreen(
                             } else {
                                 credential.filterNot(Char::isWhitespace)
                             },
+                            folderName = existingAccount?.folderName,
                         ),
                     )
                 },
@@ -1358,6 +1515,67 @@ private fun EmailAccountScreen(
                 Text(if (testState == EmailAccountTestState.Testing) "正在测试…" else "测试并保存")
             }
             if (existingAccount != null) {
+                Text(
+                    "同步文件夹",
+                    modifier = Modifier.padding(top = 24.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    "默认自动选择全部邮件或收件箱。指定文件夹后，只会检查该文件夹。" +
+                        "请自行在邮箱服务商处配置收信规则或过滤器，确保新的铁路通知会进入这里。",
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                when (folderState) {
+                    EmailFolderState.Idle,
+                    EmailFolderState.Loading,
+                    -> Text("正在读取邮箱文件夹…")
+
+                    is EmailFolderState.Error -> Text(
+                        folderState.message,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+
+                    is EmailFolderState.Success -> Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { folderMenuExpanded = true },
+                            enabled = !hasPendingEmailImport,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(existingAccount.folderName ?: "自动选择")
+                        }
+                        DropdownMenu(
+                            expanded = folderMenuExpanded,
+                            onDismissRequest = { folderMenuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("自动选择") },
+                                onClick = {
+                                    folderMenuExpanded = false
+                                    onFolderSelected(null)
+                                },
+                            )
+                            folderState.folders.forEach { folder ->
+                                DropdownMenuItem(
+                                    text = { Text(folder.fullName) },
+                                    onClick = {
+                                        folderMenuExpanded = false
+                                        onFolderSelected(folder.fullName)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (hasPendingEmailImport) {
+                    Text(
+                        "请先处理等待确认的行程，再更改同步文件夹。",
+                        modifier = Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 TextButton(
                     onClick = { showDeleteConfirmation = true },
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp),
@@ -1385,6 +1603,33 @@ private fun EmailAccountScreen(
     }
 }
 
+@Composable
+private fun EmailSyncProgressContent(
+    progress: EmailSyncProgress,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues,
+) {
+    val text = when (progress) {
+        EmailSyncProgress.Connecting -> "正在连接邮箱"
+        EmailSyncProgress.CheckingMessages -> "正在检查新邮件"
+        is EmailSyncProgress.ReadingRailwayMessages -> {
+            val current = (progress.completed + 1).coerceAtMost(progress.total)
+            "正在读取铁路订单（$current/${progress.total}）"
+        }
+        EmailSyncProgress.OrganizingTrips -> "正在整理行程"
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Text(text, modifier = Modifier.padding(top = 16.dp))
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EmailImportScreen(
@@ -1397,22 +1642,15 @@ private fun EmailImportScreen(
         topBar = { PageTopBar("从邮箱同步", onBack) },
     ) { contentPadding ->
         when (state) {
-            EmailImportState.Idle,
-            EmailImportState.Loading,
-            -> Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Text(
-                        if (state == EmailImportState.Loading) "正在读取铁路订单通知…" else "正在连接邮箱…",
-                        modifier = Modifier.padding(top = 16.dp),
-                    )
-                }
-            }
+            EmailImportState.Idle -> EmailSyncProgressContent(
+                progress = EmailSyncProgress.Connecting,
+                contentPadding = contentPadding,
+            )
+
+            is EmailImportState.Loading -> EmailSyncProgressContent(
+                progress = state.progress,
+                contentPadding = contentPadding,
+            )
 
             is EmailImportState.Error -> Box(
                 modifier = Modifier

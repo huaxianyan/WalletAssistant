@@ -1,24 +1,32 @@
 package com.neko7ina.wallet.assistant
 
 import android.app.Application
+import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neko7ina.wallet.assistant.archive.TripAutoArchiveScheduler
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
 import com.neko7ina.wallet.assistant.core.model.stableId
-import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
-import com.neko7ina.wallet.assistant.core.parser.ParseResult
+import com.neko7ina.wallet.assistant.data.PendingEmailImport
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
 import com.neko7ina.wallet.assistant.data.TravelDocumentRepository
 import com.neko7ina.wallet.assistant.data.TravelWalletDatabase
+import com.neko7ina.wallet.assistant.email.AutomaticEmailSyncScheduler
 import com.neko7ina.wallet.assistant.email.EmailAccountStore
+import com.neko7ina.wallet.assistant.email.EmailSyncCoordinator
+import com.neko7ina.wallet.assistant.email.EmailSyncNotification
+import com.neko7ina.wallet.assistant.email.EmailSyncOutcome
+import com.neko7ina.wallet.assistant.email.EmailSyncProgress
 import com.neko7ina.wallet.assistant.email.ImapAccessException
 import com.neko7ina.wallet.assistant.email.ImapAccountConfig
 import com.neko7ina.wallet.assistant.email.ImapClient
+import com.neko7ina.wallet.assistant.email.ImapFolderOption
 import com.neko7ina.wallet.assistant.email.ImapSyncCheckpoint
 import com.neko7ina.wallet.assistant.reminder.TripReminderScheduler
 import com.neko7ina.wallet.assistant.settings.AppPreferences
+import com.neko7ina.wallet.assistant.settings.AutomaticEmailSyncInterval
+import com.neko7ina.wallet.assistant.settings.AutomaticEmailSyncStatus
 import com.neko7ina.wallet.assistant.settings.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,14 +40,29 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     )
     private val imapClient = ImapClient()
     private val emailAccountStore = EmailAccountStore(application)
-    private val railwayParser = ChinaRailwayEmailParser()
+    private val emailSyncCoordinator = EmailSyncCoordinator(application)
     private val appPreferences = AppPreferences(application)
+    private val automaticEmailSyncScheduler = AutomaticEmailSyncScheduler(application)
     private val reminderScheduler = TripReminderScheduler(application)
     private val autoArchiveScheduler = TripAutoArchiveScheduler(application)
     private val mutableEmailImportState = MutableStateFlow<EmailImportState>(EmailImportState.Idle)
     private val mutableEmailAccountSummary = MutableStateFlow(emailAccountStore.summary())
     private val mutableEmailAccountTestState =
         MutableStateFlow<EmailAccountTestState>(EmailAccountTestState.Idle)
+    private val mutableEmailFolderState =
+        MutableStateFlow<EmailFolderState>(EmailFolderState.Idle)
+    private val mutableAutomaticEmailSyncEnabled = MutableStateFlow(
+        appPreferences.automaticEmailSyncEnabled,
+    )
+    private val mutableAutomaticEmailSyncInterval = MutableStateFlow(
+        appPreferences.automaticEmailSyncInterval,
+    )
+    private val mutableAutomaticEmailSyncStatus = MutableStateFlow(
+        appPreferences.automaticEmailSyncStatus,
+    )
+    private val mutableAutomaticEmailSyncStatusAt = MutableStateFlow(
+        appPreferences.automaticEmailSyncStatusAtEpochMillis,
+    )
     private val mutableNewTripsReminderEnabled = MutableStateFlow(
         appPreferences.newTripsReminderEnabled,
     )
@@ -61,6 +84,11 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     val emailImportState = mutableEmailImportState.asStateFlow()
     val emailAccountSummary = mutableEmailAccountSummary.asStateFlow()
     val emailAccountTestState = mutableEmailAccountTestState.asStateFlow()
+    val emailFolderState = mutableEmailFolderState.asStateFlow()
+    val automaticEmailSyncEnabled = mutableAutomaticEmailSyncEnabled.asStateFlow()
+    val automaticEmailSyncInterval = mutableAutomaticEmailSyncInterval.asStateFlow()
+    val automaticEmailSyncStatus = mutableAutomaticEmailSyncStatus.asStateFlow()
+    val automaticEmailSyncStatusAt = mutableAutomaticEmailSyncStatusAt.asStateFlow()
     val newTripsReminderEnabled = mutableNewTripsReminderEnabled.asStateFlow()
     val ignoreDepartedTripsOnImport = mutableIgnoreDepartedTripsOnImport.asStateFlow()
     val autoArchiveDepartedTrips = mutableAutoArchiveDepartedTrips.asStateFlow()
@@ -73,6 +101,11 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = emptyList(),
     )
+    val pendingEmailImport = repository.observePendingEmailImport().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = null,
+    )
     val archivedDocuments = repository.observeArchivedDocuments().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -81,100 +114,59 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         viewModelScope.launch { autoArchiveScheduler.reconcile() }
+        automaticEmailSyncScheduler.reconcile()
     }
 
     fun loadFromEmail() {
-        val account = emailAccountStore.load()
-        if (account == null) {
-            mutableEmailImportState.value = EmailImportState.Error(
-                "请先在设置中配置邮箱。",
-            )
-            return
-        }
-        mutableEmailImportState.value = EmailImportState.Loading
+        mutableEmailImportState.value = EmailImportState.Loading(EmailSyncProgress.Connecting)
         viewModelScope.launch {
+            val wakeLock = acquireEmailWakeLock()
             try {
-                val ignoreDepartedTrips = appPreferences.ignoreDepartedTripsOnImport
-                val checkpoint = appPreferences.imapSyncCheckpoint(
-                    accountFingerprint = account.fingerprint,
-                    parserVersion = railwayParser.version,
-                    ignoreDepartedTrips = ignoreDepartedTrips,
-                )
-                val searchResult = imapClient.searchRailwayMessages(
-                    config = account,
-                    checkpoint = checkpoint,
-                )
-                if (searchResult.messages.isEmpty()) {
-                    appPreferences.saveImapSyncCheckpoint(
-                        accountFingerprint = account.fingerprint,
-                        parserVersion = railwayParser.version,
-                        ignoreDepartedTrips = ignoreDepartedTrips,
-                        checkpoint = searchResult.nextCheckpoint,
-                    )
-                    mutableEmailImportState.value = EmailImportState.Success(
-                        documents = emptyList(),
-                        warnings = listOf("没有发现新的铁路订单通知。"),
-                        pendingCheckpoint = null,
-                        accountFingerprint = account.fingerprint,
-                        ignoreDepartedTrips = ignoreDepartedTrips,
-                    )
-                    return@launch
-                }
                 when (
-                    val result = railwayParser.parseAll(
-                        documents = searchResult.messages,
-                        baselineDocuments = if (searchResult.fullScan) {
-                            emptyList()
-                        } else {
-                            repository.allDocuments()
+                    val outcome = emailSyncCoordinator.sync(
+                        requireExistingCheckpoint = false,
+                        onProgress = { progress ->
+                            mutableEmailImportState.value = EmailImportState.Loading(progress)
                         },
                     )
                 ) {
-                    is ParseResult.Success -> {
-                        val documents = result.documents.filterNot { document ->
-                            ignoreDepartedTrips && document.hasDeparted()
-                        }
-                        if (documents.isEmpty()) {
-                            appPreferences.saveImapSyncCheckpoint(
-                                accountFingerprint = account.fingerprint,
-                                parserVersion = railwayParser.version,
-                                ignoreDepartedTrips = ignoreDepartedTrips,
-                                checkpoint = searchResult.nextCheckpoint,
-                            )
-                        }
-                        mutableEmailImportState.value = EmailImportState.Success(
-                            documents = documents,
-                            warnings = result.warnings,
-                            pendingCheckpoint = searchResult.nextCheckpoint.takeIf {
-                                documents.isNotEmpty()
-                            },
-                            accountFingerprint = account.fingerprint,
-                            ignoreDepartedTrips = ignoreDepartedTrips,
+                    EmailSyncOutcome.NoAccount -> mutableEmailImportState.value =
+                        EmailImportState.Error("请先在设置中配置邮箱。")
+
+                    EmailSyncOutcome.InitialSyncRequired -> mutableEmailImportState.value =
+                        EmailImportState.Error("请先完成一次手动邮箱同步。")
+
+                    EmailSyncOutcome.NoNewRailwayMessages -> {
+                        updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.SUCCESS)
+                        mutableEmailImportState.value = emptyEmailImportSuccess(
+                            "没有发现新的铁路订单通知。",
                         )
                     }
 
-                    is ParseResult.Failure -> {
-                        appPreferences.saveImapSyncCheckpoint(
-                            accountFingerprint = account.fingerprint,
-                            parserVersion = railwayParser.version,
-                            ignoreDepartedTrips = ignoreDepartedTrips,
-                            checkpoint = searchResult.nextCheckpoint,
+                    EmailSyncOutcome.NoRecognizableTrips -> {
+                        updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.SUCCESS)
+                        mutableEmailImportState.value = emptyEmailImportSuccess(
+                            "本次同步没有发现新的可识别行程。",
                         )
-                        mutableEmailImportState.value = EmailImportState.Success(
-                            documents = emptyList(),
-                            warnings = listOf("本次同步没有发现新的可识别行程。"),
-                            pendingCheckpoint = null,
-                            accountFingerprint = account.fingerprint,
-                            ignoreDepartedTrips = ignoreDepartedTrips,
+                    }
+
+                    is EmailSyncOutcome.PendingConfirmation -> {
+                        updateAutomaticEmailSyncStatus(
+                            AutomaticEmailSyncStatus.PENDING_CONFIRMATION,
                         )
+                        mutableEmailImportState.value = outcome.pending.toEmailImportSuccess()
                     }
                 }
             } catch (error: ImapAccessException) {
+                updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.FAILED)
                 mutableEmailImportState.value = EmailImportState.Error(requireNotNull(error.message))
             } catch (_: Exception) {
+                updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.FAILED)
                 mutableEmailImportState.value = EmailImportState.Error(
                     "暂时无法读取邮箱，请检查网络和邮箱配置后重试。",
                 )
+            } finally {
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
     }
@@ -182,18 +174,30 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     fun testAndSaveEmailAccount(config: ImapAccountConfig) {
         mutableEmailAccountTestState.value = EmailAccountTestState.Testing
         viewModelScope.launch {
+            val wakeLock = acquireEmailWakeLock()
             try {
-                imapClient.testConnection(config)
-                emailAccountStore.load()?.takeIf { it.fingerprint != config.fingerprint }?.let {
+                val folders = imapClient.listSelectableFolders(config)
+                val savedConfig = config.copy(
+                    folderName = config.folderName?.takeIf { selected ->
+                        folders.any { it.fullName == selected }
+                    },
+                )
+                emailAccountStore.load()?.takeIf {
+                    it.fingerprint != savedConfig.fingerprint
+                }?.let {
                     appPreferences.clearImapSyncCheckpoints(it.fingerprint)
+                    repository.deletePendingEmailImport()
                 }
-                emailAccountStore.save(config)
+                emailAccountStore.save(savedConfig)
                 mutableEmailAccountSummary.value = emailAccountStore.summary()
+                mutableEmailFolderState.value = EmailFolderState.Success(folders)
                 mutableEmailAccountTestState.value = EmailAccountTestState.Success
             } catch (error: ImapAccessException) {
                 mutableEmailAccountTestState.value = EmailAccountTestState.Error(
                     requireNotNull(error.message),
                 )
+            } finally {
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
     }
@@ -203,12 +207,52 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
             appPreferences.clearImapSyncCheckpoints(it.fingerprint)
         }
         emailAccountStore.delete()
+        appPreferences.automaticEmailSyncEnabled = false
+        mutableAutomaticEmailSyncEnabled.value = false
+        automaticEmailSyncScheduler.reconcile()
+        viewModelScope.launch { repository.deletePendingEmailImport() }
         mutableEmailAccountSummary.value = null
         mutableEmailAccountTestState.value = EmailAccountTestState.Idle
+        mutableEmailFolderState.value = EmailFolderState.Idle
     }
 
     fun resetEmailAccountTestState() {
         mutableEmailAccountTestState.value = EmailAccountTestState.Idle
+        val account = emailAccountStore.load()
+        if (account == null) {
+            mutableEmailFolderState.value = EmailFolderState.Idle
+            return
+        }
+        mutableEmailFolderState.value = EmailFolderState.Loading
+        viewModelScope.launch {
+            try {
+                mutableEmailFolderState.value = EmailFolderState.Success(
+                    imapClient.listSelectableFolders(account),
+                )
+            } catch (error: ImapAccessException) {
+                mutableEmailFolderState.value = EmailFolderState.Error(
+                    requireNotNull(error.message),
+                )
+            }
+        }
+    }
+
+    fun selectEmailFolder(folderName: String?) {
+        viewModelScope.launch {
+            if (repository.pendingEmailImport() != null) return@launch
+            val current = emailAccountStore.load() ?: return@launch
+            val updated = current.copy(folderName = folderName)
+            if (updated.fingerprint == current.fingerprint) return@launch
+            appPreferences.clearImapSyncCheckpoints(current.fingerprint)
+            emailAccountStore.save(updated)
+            mutableEmailAccountSummary.value = emailAccountStore.summary()
+            if (appPreferences.automaticEmailSyncEnabled) {
+                appPreferences.automaticEmailSyncEnabled = false
+                mutableAutomaticEmailSyncEnabled.value = false
+                updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.INITIAL_SYNC_REQUIRED)
+                automaticEmailSyncScheduler.reconcile()
+            }
+        }
     }
 
     fun save(documents: List<TravelDocument>, emailImport: Boolean = false) {
@@ -234,17 +278,35 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
                 }
             }
             if (emailImport) {
-                val emailState = mutableEmailImportState.value as? EmailImportState.Success
-                    ?: return@launch
-                val checkpoint = emailState.pendingCheckpoint ?: return@launch
-                appPreferences.saveImapSyncCheckpoint(
-                    accountFingerprint = emailState.accountFingerprint,
-                    parserVersion = railwayParser.version,
-                    ignoreDepartedTrips = emailState.ignoreDepartedTrips,
-                    checkpoint = checkpoint,
-                )
+                repository.pendingEmailImport()?.let { pending ->
+                    emailSyncCoordinator.completePendingImport(pending)
+                    EmailSyncNotification.cancel(getApplication())
+                    updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.SUCCESS)
+                }
             }
         }
+    }
+
+    fun showPendingEmailImport() {
+        viewModelScope.launch {
+            repository.pendingEmailImport()?.let { pending ->
+                mutableEmailImportState.value = pending.toEmailImportSuccess()
+            }
+        }
+    }
+
+    fun setAutomaticEmailSyncEnabled(enabled: Boolean): Boolean {
+        if (enabled && !emailSyncCoordinator.canEnableAutomaticSync()) return false
+        appPreferences.automaticEmailSyncEnabled = enabled
+        mutableAutomaticEmailSyncEnabled.value = enabled
+        automaticEmailSyncScheduler.reconcile()
+        return true
+    }
+
+    fun setAutomaticEmailSyncInterval(interval: AutomaticEmailSyncInterval) {
+        appPreferences.automaticEmailSyncInterval = interval
+        mutableAutomaticEmailSyncInterval.value = interval
+        automaticEmailSyncScheduler.reconcile()
     }
 
     fun setNewTripsReminderEnabled(enabled: Boolean) {
@@ -255,6 +317,15 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
     fun setIgnoreDepartedTripsOnImport(ignore: Boolean) {
         appPreferences.ignoreDepartedTripsOnImport = ignore
         mutableIgnoreDepartedTripsOnImport.value = ignore
+        if (
+            appPreferences.automaticEmailSyncEnabled &&
+            !emailSyncCoordinator.canEnableAutomaticSync()
+        ) {
+            appPreferences.automaticEmailSyncEnabled = false
+            mutableAutomaticEmailSyncEnabled.value = false
+            updateAutomaticEmailSyncStatus(AutomaticEmailSyncStatus.INITIAL_SYNC_REQUIRED)
+            automaticEmailSyncScheduler.reconcile()
+        }
     }
 
     fun setAutoArchiveDepartedTrips(enabled: Boolean) {
@@ -324,17 +395,65 @@ class TravelWalletViewModel(application: Application) : AndroidViewModel(applica
         reminderScheduler.scheduleDebugSequence(document)
     }
 
+    private fun PendingEmailImport.toEmailImportSuccess(): EmailImportState.Success =
+        EmailImportState.Success(
+            documents = documents,
+            warnings = warnings,
+            pendingCheckpoint = checkpoint,
+            accountFingerprint = accountFingerprint,
+            ignoreDepartedTrips = ignoreDepartedTrips,
+        )
+
+    private fun emptyEmailImportSuccess(message: String): EmailImportState.Success =
+        EmailImportState.Success(
+            documents = emptyList(),
+            warnings = listOf(message),
+            pendingCheckpoint = null,
+            accountFingerprint = "",
+            ignoreDepartedTrips = appPreferences.ignoreDepartedTripsOnImport,
+        )
+
+    fun refreshAutomaticEmailSyncStatus() {
+        mutableAutomaticEmailSyncEnabled.value = appPreferences.automaticEmailSyncEnabled
+        mutableAutomaticEmailSyncStatus.value = appPreferences.automaticEmailSyncStatus
+        mutableAutomaticEmailSyncStatusAt.value =
+            appPreferences.automaticEmailSyncStatusAtEpochMillis
+    }
+
+    private fun updateAutomaticEmailSyncStatus(status: AutomaticEmailSyncStatus) {
+        val now = System.currentTimeMillis()
+        appPreferences.automaticEmailSyncStatus = status
+        appPreferences.automaticEmailSyncStatusAtEpochMillis = now
+        mutableAutomaticEmailSyncStatus.value = status
+        mutableAutomaticEmailSyncStatusAt.value = now
+    }
+
     private fun rescheduleEnabledDocuments() {
         viewModelScope.launch {
             repository.getReminderEnabledDocuments().forEach(reminderScheduler::schedule)
         }
     }
 
+    private fun acquireEmailWakeLock(): PowerManager.WakeLock =
+        getApplication<Application>()
+            .getSystemService(PowerManager::class.java)
+            .newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "${BuildConfig.APPLICATION_ID}:EmailSync",
+            )
+            .apply {
+                setReferenceCounted(false)
+                acquire(EMAIL_WAKE_LOCK_TIMEOUT_MILLIS)
+            }
+
+    private companion object {
+        const val EMAIL_WAKE_LOCK_TIMEOUT_MILLIS = 5 * 60 * 1_000L
+    }
 }
 
 sealed interface EmailImportState {
     data object Idle : EmailImportState
-    data object Loading : EmailImportState
+    data class Loading(val progress: EmailSyncProgress) : EmailImportState
     data class Success(
         val documents: List<TravelDocument>,
         val warnings: List<String>,
@@ -343,6 +462,13 @@ sealed interface EmailImportState {
         val ignoreDepartedTrips: Boolean,
     ) : EmailImportState
     data class Error(val message: String) : EmailImportState
+}
+
+sealed interface EmailFolderState {
+    data object Idle : EmailFolderState
+    data object Loading : EmailFolderState
+    data class Success(val folders: List<ImapFolderOption>) : EmailFolderState
+    data class Error(val message: String) : EmailFolderState
 }
 
 sealed interface EmailAccountTestState {

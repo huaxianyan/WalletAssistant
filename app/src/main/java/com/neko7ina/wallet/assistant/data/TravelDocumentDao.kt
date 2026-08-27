@@ -63,6 +63,18 @@ interface TravelDocumentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(document: StoredTravelDocument)
 
+    @Query("SELECT * FROM pending_email_import WHERE id = 1")
+    fun observePendingEmailImport(): Flow<StoredPendingEmailImport?>
+
+    @Query("SELECT * FROM pending_email_import WHERE id = 1")
+    suspend fun findPendingEmailImport(): StoredPendingEmailImport?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPendingEmailImport(pending: StoredPendingEmailImport)
+
+    @Query("DELETE FROM pending_email_import WHERE id = 1")
+    suspend fun deletePendingEmailImport()
+
     @Transaction
     suspend fun replaceReservation(
         providerCode: String,

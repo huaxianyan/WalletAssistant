@@ -6,6 +6,22 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+enum class AutomaticEmailSyncInterval(val hours: Long) {
+    ONE_HOUR(1),
+    THREE_HOURS(3),
+    SIX_HOURS(6),
+    TWELVE_HOURS(12),
+    TWENTY_FOUR_HOURS(24),
+}
+
+enum class AutomaticEmailSyncStatus {
+    NEVER,
+    SUCCESS,
+    FAILED,
+    INITIAL_SYNC_REQUIRED,
+    PENDING_CONFIRMATION,
+}
+
 enum class ThemeMode {
     SYSTEM,
     LIGHT,
@@ -36,6 +52,44 @@ class AppPreferences(context: Context) {
             }.apply()
         }
     }
+
+    var automaticEmailSyncEnabled: Boolean
+        get() = preferences.getBoolean(KEY_AUTOMATIC_EMAIL_SYNC_ENABLED, false)
+        set(value) {
+            preferences.edit().putBoolean(KEY_AUTOMATIC_EMAIL_SYNC_ENABLED, value).apply()
+        }
+
+    var automaticEmailSyncInterval: AutomaticEmailSyncInterval
+        get() = runCatching {
+            AutomaticEmailSyncInterval.valueOf(
+                preferences.getString(
+                    KEY_AUTOMATIC_EMAIL_SYNC_INTERVAL,
+                    AutomaticEmailSyncInterval.SIX_HOURS.name,
+                ) ?: AutomaticEmailSyncInterval.SIX_HOURS.name,
+            )
+        }.getOrDefault(AutomaticEmailSyncInterval.SIX_HOURS)
+        set(value) {
+            preferences.edit().putString(KEY_AUTOMATIC_EMAIL_SYNC_INTERVAL, value.name).apply()
+        }
+
+    var automaticEmailSyncStatus: AutomaticEmailSyncStatus
+        get() = runCatching {
+            AutomaticEmailSyncStatus.valueOf(
+                preferences.getString(
+                    KEY_AUTOMATIC_EMAIL_SYNC_STATUS,
+                    AutomaticEmailSyncStatus.NEVER.name,
+                ) ?: AutomaticEmailSyncStatus.NEVER.name,
+            )
+        }.getOrDefault(AutomaticEmailSyncStatus.NEVER)
+        set(value) {
+            preferences.edit().putString(KEY_AUTOMATIC_EMAIL_SYNC_STATUS, value.name).apply()
+        }
+
+    var automaticEmailSyncStatusAtEpochMillis: Long
+        get() = preferences.getLong(KEY_AUTOMATIC_EMAIL_SYNC_STATUS_AT, 0L)
+        set(value) {
+            preferences.edit().putLong(KEY_AUTOMATIC_EMAIL_SYNC_STATUS_AT, value).apply()
+        }
 
     var newTripsReminderEnabled: Boolean
         get() = preferences.getBoolean(KEY_NEW_TRIPS_REMINDER, false)
@@ -148,6 +202,10 @@ class AppPreferences(context: Context) {
 
     private companion object {
         const val PREFERENCES_NAME = "trip_reminders"
+        const val KEY_AUTOMATIC_EMAIL_SYNC_ENABLED = "automatic_email_sync_enabled"
+        const val KEY_AUTOMATIC_EMAIL_SYNC_INTERVAL = "automatic_email_sync_interval"
+        const val KEY_AUTOMATIC_EMAIL_SYNC_STATUS = "automatic_email_sync_status"
+        const val KEY_AUTOMATIC_EMAIL_SYNC_STATUS_AT = "automatic_email_sync_status_at"
         const val KEY_NEW_TRIPS_REMINDER = "new_trips_enabled"
         const val KEY_IGNORE_DEPARTED_TRIPS_ON_IMPORT = "ignore_departed_trips_on_import"
         const val KEY_AUTO_ARCHIVE_DEPARTED_TRIPS = "auto_archive_departed_trips"

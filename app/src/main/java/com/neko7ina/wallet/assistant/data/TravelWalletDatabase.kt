@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [StoredTravelDocument::class],
-    version = 4,
+    entities = [StoredTravelDocument::class, StoredPendingEmailImport::class],
+    version = 5,
     exportSchema = true,
 )
 abstract class TravelWalletDatabase : RoomDatabase() {
@@ -46,6 +46,22 @@ abstract class TravelWalletDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS pending_email_import (" +
+                        "id INTEGER NOT NULL, " +
+                        "documentsPayload TEXT NOT NULL, " +
+                        "warningsPayload TEXT NOT NULL, " +
+                        "checkpointPayload TEXT NOT NULL, " +
+                        "accountFingerprint TEXT NOT NULL, " +
+                        "ignoreDepartedTrips INTEGER NOT NULL, " +
+                        "createdAtEpochMillis INTEGER NOT NULL, " +
+                        "PRIMARY KEY(id))",
+                )
+            }
+        }
+
         @Volatile
         private var instance: TravelWalletDatabase? = null
 
@@ -54,7 +70,7 @@ abstract class TravelWalletDatabase : RoomDatabase() {
                 context.applicationContext,
                 TravelWalletDatabase::class.java,
                 "travel-wallet.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }

@@ -24,7 +24,11 @@ class EmailAccountStore(context: Context) {
     }
 
     fun summary(): ImapAccountSummary? = load()?.let {
-        ImapAccountSummary(emailAddress = it.emailAddress, host = it.host)
+        ImapAccountSummary(
+            emailAddress = it.emailAddress,
+            host = it.host,
+            folderName = it.folderName,
+        )
     }
 
     fun save(config: ImapAccountConfig) {
