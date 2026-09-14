@@ -809,8 +809,11 @@ private fun DashboardScreen(
                 if (hasPendingEmailImport) {
                     item { PendingEmailImportCard(onPendingEmailImportClick) }
                 }
-                nextTrip?.let { saved ->
-                    item { NextTripCard(saved = saved, now = now, onClick = { onTripClick(saved) }) }
+                val upcoming = nextTrip
+                if (upcoming != null) {
+                    item { NextTripCard(saved = upcoming, now = now, onClick = { onTripClick(upcoming) }) }
+                } else if (!hasNothingSaved) {
+                    item { NoUpcomingTripCard() }
                 }
                 if (summary.hasTrips) {
                     item { TripCountCards(summary) }
@@ -966,6 +969,21 @@ private fun TopRoutesCard(summary: TravelSummary) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NoUpcomingTripCard() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("暂无即将出发的行程", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "新行程保存后会显示在这里，并开始按发车时间倒计时。",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
