@@ -14,3 +14,4 @@ wallet.properties
 .cxx/
 .DS_Store
 /AGENTS.md
+/.workbuddy/

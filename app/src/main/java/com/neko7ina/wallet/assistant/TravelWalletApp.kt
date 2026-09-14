@@ -19,6 +19,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,15 +40,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.ImageSearch
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,6 +64,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -67,6 +75,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -86,12 +96,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -105,6 +117,8 @@ import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
 import com.neko7ina.wallet.assistant.core.parser.RawDocument
 import com.neko7ina.wallet.assistant.core.parser.normalizeOcrTextForStructuredParsing
+import com.neko7ina.wallet.assistant.core.summary.TravelSummary
+import com.neko7ina.wallet.assistant.core.summary.TripStatistics
 import com.neko7ina.wallet.assistant.data.SavedTravelDocument
 import com.neko7ina.wallet.assistant.email.EmailSyncProgress
 import com.neko7ina.wallet.assistant.email.ImapAccountConfig
@@ -116,17 +130,50 @@ import com.neko7ina.wallet.assistant.settings.AutomaticEmailSyncStatus
 import com.neko7ina.wallet.assistant.settings.ReminderTimingConstraints
 import com.neko7ina.wallet.assistant.settings.ThemeMode
 import com.neko7ina.wallet.assistant.wallet.GoogleWalletPassFactory
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
+/** 底栏承载的顶层页面。 */
+private enum class MainTab(
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+) {
+    DASHBOARD(
+        label = "首页",
+        selectedIcon = Icons.Filled.Home,
+        unselectedIcon = Icons.Outlined.Home,
+    ),
+    TRIPS(
+        label = "行程",
+        selectedIcon = Icons.AutoMirrored.Filled.List,
+        unselectedIcon = Icons.AutoMirrored.Outlined.List,
+    ),
+    SETTINGS(
+        label = "设置",
+        selectedIcon = Icons.Filled.Settings,
+        unselectedIcon = Icons.Outlined.Settings,
+    ),
+}
+
+/** 「行程」页内切换未出发行程和历史行程。 */
+private enum class TripsView(val label: String) {
+    UPCOMING("未出发"),
+    HISTORY("历史"),
+}
+
+/**
+ * 需要全屏推入的二级页面。顶层页面由 [MainTab] 承载，
+ * 这里只保留会盖住底栏的页面。
+ */
 private enum class Screen {
-    HOME,
-    ARCHIVE,
-    SETTINGS,
+    MAIN,
     EMAIL_IMPORT,
     EMAIL_ACCOUNT,
     TEXT_IMPORT,
@@ -141,7 +188,7 @@ private enum class ImportMode {
 
 private val Screen.depth: Int
     get() = when (this) {
-        Screen.HOME -> 0
+        Screen.MAIN -> 0
         Screen.CONFIRM,
         Screen.EMAIL_ACCOUNT,
         -> 2
@@ -196,7 +243,9 @@ fun TravelWalletApp(
     val automaticEmailSyncInterval by viewModel.automaticEmailSyncInterval.collectAsStateWithLifecycle()
     val automaticEmailSyncStatus by viewModel.automaticEmailSyncStatus.collectAsStateWithLifecycle()
     val automaticEmailSyncStatusAt by viewModel.automaticEmailSyncStatusAt.collectAsStateWithLifecycle()
-    var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
+    var screen by rememberSaveable { mutableStateOf(Screen.MAIN) }
+    var tab by rememberSaveable { mutableStateOf(MainTab.DASHBOARD) }
+    var tripsView by rememberSaveable { mutableStateOf(TripsView.UPCOMING) }
     var emailBody by rememberSaveable { mutableStateOf("") }
     var importMode by rememberSaveable { mutableStateOf(ImportMode.EMAIL) }
     var parseError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -253,6 +302,12 @@ fun TravelWalletApp(
         }
     }
 
+    /** 邮箱配置是从设置页进入的二级页面，退出时回到设置标签页。 */
+    fun closeEmailAccount() {
+        tab = MainTab.SETTINGS
+        screen = Screen.MAIN
+    }
+
     LaunchedEffect(openPendingEmailImport, pendingEmailImport) {
         if (openPendingEmailImport && pendingEmailImport != null) {
             viewModel.showPendingEmailImport()
@@ -269,11 +324,19 @@ fun TravelWalletApp(
         }
     }
 
-    BackHandler(enabled = screen != Screen.HOME) {
+    BackHandler(enabled = screen != Screen.MAIN || tab != MainTab.DASHBOARD) {
+        if (screen == Screen.MAIN) {
+            tab = MainTab.DASHBOARD
+            return@BackHandler
+        }
         screen = when (screen) {
             Screen.CONFIRM -> confirmationSource
-            Screen.EMAIL_ACCOUNT -> Screen.SETTINGS
-            else -> Screen.HOME
+            Screen.EMAIL_ACCOUNT -> {
+                tab = MainTab.SETTINGS
+                Screen.MAIN
+            }
+
+            else -> Screen.MAIN
         }
     }
 
@@ -293,86 +356,112 @@ fun TravelWalletApp(
                 label = "page transition",
             ) { targetScreen ->
                 when (targetScreen) {
-                Screen.HOME -> HomeScreen(
-                    documents = documents,
-                    hasPendingEmailImport = pendingEmailImport != null,
-                    onPendingEmailImportClick = {
-                        viewModel.showPendingEmailImport()
-                        screen = Screen.EMAIL_IMPORT
+                Screen.MAIN -> MainTabsScaffold(
+                    tab = tab,
+                    onTabChange = { entry ->
+                        if (entry == MainTab.SETTINGS) {
+                            viewModel.refreshAutomaticEmailSyncStatus()
+                        }
+                        tab = entry
                     },
-                    onTripClick = { selectedTripId = it.document.stableId() },
-                    onSwipeArchive = { viewModel.setArchived(it, true) },
                     onAddClick = { showAddSheet = true },
-                    onArchiveClick = { screen = Screen.ARCHIVE },
-                    onSettingsClick = {
-                        viewModel.refreshAutomaticEmailSyncStatus()
-                        screen = Screen.SETTINGS
+                    dashboard = {
+                        DashboardScreen(
+                            documents = documents,
+                            archivedDocuments = archivedDocuments,
+                            hasPendingEmailImport = pendingEmailImport != null,
+                            hasEmailAccount = emailAccountSummary != null,
+                            onPendingEmailImportClick = {
+                                viewModel.showPendingEmailImport()
+                                screen = Screen.EMAIL_IMPORT
+                            },
+                            onImportHistoryClick = {
+                                screen = Screen.EMAIL_IMPORT
+                                viewModel.loadFromEmail(includeHistoricalTrips = true)
+                            },
+                            onAddClick = { showAddSheet = true },
+                            onTripClick = { selectedTripId = it.document.stableId() },
+                        )
                     },
-                )
-
-                Screen.ARCHIVE -> ArchiveScreen(
-                    documents = archivedDocuments,
-                    onBack = { screen = Screen.HOME },
-                    onTripClick = { selectedTripId = it.document.stableId() },
-                )
-
-                Screen.SETTINGS -> SettingsScreen(
-                    newTripsReminderEnabled = newTripsReminderEnabled,
-                    autoArchiveDepartedTrips = autoArchiveDepartedTrips,
-                    departureReminderMinutes = departureReminderMinutes,
-                    liveStatusMinutes = liveStatusMinutes,
-                    googleWalletActionVisible = googleWalletActionVisible,
-                    themeMode = themeMode,
-                    emailAccountSummary = emailAccountSummary,
-                    automaticEmailSyncEnabled = automaticEmailSyncEnabled,
-                    automaticEmailSyncInterval = automaticEmailSyncInterval,
-                    automaticEmailSyncStatus = automaticEmailSyncStatus,
-                    automaticEmailSyncStatusAt = automaticEmailSyncStatusAt,
-                    onBack = { screen = Screen.HOME },
-                    onEmailAccountClick = {
-                        viewModel.resetEmailAccountTestState()
-                        screen = Screen.EMAIL_ACCOUNT
+                    trips = {
+                        TripsScreen(
+                            view = tripsView,
+                            onViewChange = { tripsView = it },
+                            documents = documents,
+                            archivedDocuments = archivedDocuments,
+                            hasPendingEmailImport = pendingEmailImport != null,
+                            onPendingEmailImportClick = {
+                                viewModel.showPendingEmailImport()
+                                screen = Screen.EMAIL_IMPORT
+                            },
+                            onTripClick = { selectedTripId = it.document.stableId() },
+                            onSwipeArchive = { viewModel.setArchived(it, true) },
+                        )
                     },
-                    onNewTripsReminderChange = { enabled ->
-                        changeReminder(enabled) { viewModel.setNewTripsReminderEnabled(enabled) }
-                    },
-                    onAutomaticEmailSyncChange = { enabled ->
-                        fun applyChange() {
-                            if (!viewModel.setAutomaticEmailSyncEnabled(enabled)) {
-                                Toast.makeText(
-                                    context,
-                                    "请先完成一次手动邮箱同步。",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        }
-                        if (enabled) {
-                            requestNotificationPermission { granted ->
-                                applyChange()
-                                if (!granted) {
-                                    Toast.makeText(
-                                        context,
-                                        "自动同步已开启，新行程会显示在首页。",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
+                    settings = {
+                        SettingsScreen(
+                            newTripsReminderEnabled = newTripsReminderEnabled,
+                            autoArchiveDepartedTrips = autoArchiveDepartedTrips,
+                            departureReminderMinutes = departureReminderMinutes,
+                            liveStatusMinutes = liveStatusMinutes,
+                            googleWalletActionVisible = googleWalletActionVisible,
+                            themeMode = themeMode,
+                            emailAccountSummary = emailAccountSummary,
+                            automaticEmailSyncEnabled = automaticEmailSyncEnabled,
+                            automaticEmailSyncInterval = automaticEmailSyncInterval,
+                            automaticEmailSyncStatus = automaticEmailSyncStatus,
+                            automaticEmailSyncStatusAt = automaticEmailSyncStatusAt,
+                            onEmailAccountClick = {
+                                viewModel.resetEmailAccountTestState()
+                                screen = Screen.EMAIL_ACCOUNT
+                            },
+                            onNewTripsReminderChange = { enabled ->
+                                changeReminder(enabled) {
+                                    viewModel.setNewTripsReminderEnabled(enabled)
                                 }
-                            }
-                        } else {
-                            applyChange()
-                        }
+                            },
+                            onAutomaticEmailSyncChange = { enabled ->
+                                fun applyChange() {
+                                    if (!viewModel.setAutomaticEmailSyncEnabled(enabled)) {
+                                        Toast.makeText(
+                                            context,
+                                            "请先完成一次手动邮箱同步。",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
+                                }
+                                if (enabled) {
+                                    requestNotificationPermission { granted ->
+                                        applyChange()
+                                        if (!granted) {
+                                            Toast.makeText(
+                                                context,
+                                                "自动同步已开启，新行程会显示在行程页。",
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    }
+                                } else {
+                                    applyChange()
+                                }
+                            },
+                            onAutomaticEmailSyncIntervalChange =
+                                viewModel::setAutomaticEmailSyncInterval,
+                            onAutoArchiveDepartedTripsChange =
+                                viewModel::setAutoArchiveDepartedTrips,
+                            onDepartureReminderMinutesChange =
+                                viewModel::setDepartureReminderMinutes,
+                            onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
+                            onGoogleWalletVisibilityChange =
+                                viewModel::setGoogleWalletActionVisible,
+                            onThemeModeChange = viewModel::setThemeMode,
+                        )
                     },
-                    onAutomaticEmailSyncIntervalChange =
-                        viewModel::setAutomaticEmailSyncInterval,
-                    onAutoArchiveDepartedTripsChange = viewModel::setAutoArchiveDepartedTrips,
-                    onDepartureReminderMinutesChange = viewModel::setDepartureReminderMinutes,
-                    onLiveStatusMinutesChange = viewModel::setLiveStatusMinutes,
-                    onGoogleWalletVisibilityChange = viewModel::setGoogleWalletActionVisible,
-                    onThemeModeChange = viewModel::setThemeMode,
                 )
 
                 Screen.EMAIL_IMPORT -> EmailImportScreen(
                     state = emailImportState,
-                    onBack = { screen = Screen.HOME },
+                    onBack = { screen = Screen.MAIN },
                     onConfirm = { documentsToConfirm ->
                         parsedDocuments = documentsToConfirm
                         confirmationSource = Screen.EMAIL_IMPORT
@@ -385,13 +474,13 @@ fun TravelWalletApp(
                     testState = emailAccountTestState,
                     folderState = emailFolderState,
                     hasPendingEmailImport = pendingEmailImport != null,
-                    onBack = { screen = Screen.SETTINGS },
+                    onBack = { closeEmailAccount() },
                     onSave = viewModel::testAndSaveEmailAccount,
                     onLoadFolders = viewModel::loadEmailFolders,
                     onFolderSelected = viewModel::selectEmailFolder,
                     onDelete = {
                         viewModel.deleteEmailAccount()
-                        screen = Screen.SETTINGS
+                        closeEmailAccount()
                     },
                 )
 
@@ -411,7 +500,7 @@ fun TravelWalletApp(
                     } else {
                         null
                     },
-                    onBack = { screen = Screen.HOME },
+                    onBack = { screen = Screen.MAIN },
                     onParse = {
                         val textToParse = if (importMode == ImportMode.SCREENSHOT) {
                             normalizeOcrTextForStructuredParsing(emailBody)
@@ -438,7 +527,7 @@ fun TravelWalletApp(
                 )
 
                 Screen.SCREENSHOT_IMPORT -> ScreenshotImportScreen(
-                    onBack = { screen = Screen.HOME },
+                    onBack = { screen = Screen.MAIN },
                 )
 
                 Screen.CONFIRM -> ConfirmationScreen(
@@ -449,7 +538,7 @@ fun TravelWalletApp(
                             documents = parsedDocuments,
                             emailImport = confirmationSource == Screen.EMAIL_IMPORT,
                         )
-                        screen = Screen.HOME
+                        screen = Screen.MAIN
                     },
                 )
                 }
@@ -488,9 +577,9 @@ fun TravelWalletApp(
                                 parseError = null
                                 screen = Screen.TEXT_IMPORT
                             }
-                            ScreenshotRecognitionResult.Cancelled -> screen = Screen.HOME
+                            ScreenshotRecognitionResult.Cancelled -> screen = Screen.MAIN
                             ScreenshotRecognitionResult.Failed -> {
-                                screen = Screen.HOME
+                                screen = Screen.MAIN
                                 Toast.makeText(
                                     context,
                                     "未能读取截图，请重新选择清晰图片或改用粘贴正文。",
@@ -610,106 +699,58 @@ fun TravelWalletApp(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(
-    documents: List<SavedTravelDocument>,
-    hasPendingEmailImport: Boolean,
-    onPendingEmailImportClick: () -> Unit,
-    onTripClick: (SavedTravelDocument) -> Unit,
-    onSwipeArchive: (SavedTravelDocument) -> Unit,
+private fun MainTabsScaffold(
+    tab: MainTab,
+    onTabChange: (MainTab) -> Unit,
     onAddClick: () -> Unit,
-    onArchiveClick: () -> Unit,
-    onSettingsClick: () -> Unit,
+    dashboard: @Composable () -> Unit,
+    trips: @Composable () -> Unit,
+    settings: @Composable () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            TopAppBar(
-                title = { Text("我的行程") },
-                actions = {
-                    Box {
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("历史行程") },
-                                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onArchiveClick()
+        bottomBar = {
+            NavigationBar {
+                MainTab.entries.forEach { entry ->
+                    val selected = entry == tab
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { onTabChange(entry) },
+                        icon = {
+                            Icon(
+                                imageVector = if (selected) {
+                                    entry.selectedIcon
+                                } else {
+                                    entry.unselectedIcon
                                 },
+                                contentDescription = null,
                             )
-                            DropdownMenuItem(
-                                text = { Text("设置") },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onSettingsClick()
-                                },
-                            )
-                        }
-                    }
-                },
-            )
+                        },
+                        label = { Text(entry.label) },
+                    )
+                }
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddClick) {
-                Icon(Icons.Default.Add, contentDescription = "添加行程")
+            if (tab != MainTab.SETTINGS) {
+                FloatingActionButton(onClick = onAddClick) {
+                    Icon(Icons.Default.Add, contentDescription = "添加行程")
+                }
             }
         },
     ) { contentPadding ->
-        if (documents.isEmpty() && !hasPendingEmailImport) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(contentPadding)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("还没有行程", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "点击右下角添加行程",
-                        modifier = Modifier.padding(top = 8.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = contentPadding,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item { Spacer(Modifier.height(4.dp)) }
-                if (hasPendingEmailImport) {
-                    item {
-                        ListItem(
-                            headlineContent = { Text("有新的铁路行程等待确认") },
-                            supportingContent = { Text("检查后保存到我的行程") },
-                            leadingContent = {
-                                Icon(Icons.Default.Email, contentDescription = null)
-                            },
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable(onClick = onPendingEmailImportClick),
-                        )
-                    }
-                }
-                items(documents, key = { it.document.stableId() }) { saved ->
-                    SwipeToArchiveTripCard(
-                        saved = saved,
-                        onClick = { onTripClick(saved) },
-                        onArchive = { onSwipeArchive(saved) },
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                }
-                item { Spacer(Modifier.height(88.dp)) }
+        AnimatedContent(
+            targetState = tab,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "标签页切换",
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) { targetTab ->
+            when (targetTab) {
+                MainTab.DASHBOARD -> dashboard()
+                MainTab.TRIPS -> trips()
+                MainTab.SETTINGS -> settings()
             }
         }
     }
@@ -717,39 +758,320 @@ private fun HomeScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ArchiveScreen(
+private fun DashboardScreen(
     documents: List<SavedTravelDocument>,
-    onBack: () -> Unit,
+    archivedDocuments: List<SavedTravelDocument>,
+    hasPendingEmailImport: Boolean,
+    hasEmailAccount: Boolean,
+    onPendingEmailImportClick: () -> Unit,
+    onImportHistoryClick: () -> Unit,
+    onAddClick: () -> Unit,
     onTripClick: (SavedTravelDocument) -> Unit,
 ) {
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = { PageTopBar("历史行程", onBack) },
-    ) { contentPadding ->
-        if (documents.isEmpty()) {
-            Box(
+    val now = rememberMinuteTicker()
+    val summary = remember(documents, archivedDocuments, now) {
+        TripStatistics.summarize(
+            documents = (documents + archivedDocuments).map { it.document },
+            now = now,
+        )
+    }
+    val nextTrip = documents.firstOrNull { !it.document.hasDeparted(now) }
+    val hasNothingSaved = documents.isEmpty() && archivedDocuments.isEmpty()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("首页") }, windowInsets = WindowInsets(0, 0, 0, 0))
+        if (hasNothingSaved && !hasPendingEmailImport) {
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
-                contentAlignment = Alignment.Center,
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("还没有历史行程", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                DashboardEmptyState(
+                    hasEmailAccount = hasEmailAccount,
+                    onImportHistoryClick = onImportHistoryClick,
+                    onAddClick = onAddClick,
+                )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = contentPadding,
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 12.dp,
+                    bottom = 88.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { Spacer(Modifier.height(4.dp)) }
-                items(documents, key = { it.document.stableId() }) { saved ->
-                    CompactTripCard(
-                        saved = saved,
-                        onClick = { onTripClick(saved) },
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                if (hasPendingEmailImport) {
+                    item { PendingEmailImportCard(onPendingEmailImportClick) }
+                }
+                nextTrip?.let { saved ->
+                    item { NextTripCard(saved = saved, now = now, onClick = { onTripClick(saved) }) }
+                }
+                item { TripCountCards(summary) }
+                if (summary.topRoutes.isNotEmpty()) {
+                    item { TopRoutesCard(summary) }
+                }
+                if (summary.totalTrips == 0 && hasEmailAccount) {
+                    item { HistoryImportHintCard(onImportHistoryClick) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardEmptyState(
+    hasEmailAccount: Boolean,
+    onImportHistoryClick: () -> Unit,
+    onAddClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(top = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("还没有行程", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "配置邮箱后可以导入铁路订单通知，已经结束的行程也可以一并导入并归档。",
+            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        if (hasEmailAccount) {
+            Button(onClick = onImportHistoryClick, modifier = Modifier.fillMaxWidth()) {
+                Text("导入历史行程")
+            }
+            OutlinedButton(
+                onClick = onAddClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+            ) {
+                Text("添加行程")
+            }
+        } else {
+            Button(onClick = onAddClick, modifier = Modifier.fillMaxWidth()) {
+                Text("添加行程")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NextTripCard(
+    saved: SavedTravelDocument,
+    now: Instant,
+    onClick: () -> Unit,
+) {
+    val segment = saved.document.segments.first()
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text("下一趟行程", style = MaterialTheme.typography.labelLarge)
+            Text(
+                segment.serviceNumber,
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "${segment.origin.name} → ${segment.destination.name}",
+                modifier = Modifier.padding(top = 2.dp),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                segment.departureTime.format(DEPARTURE_FORMAT),
+                modifier = Modifier.padding(top = 10.dp),
+            )
+            Text(
+                formatDepartureCountdown(segment.departureTime, now),
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TripCountCards(summary: TravelSummary) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        TripCountCard("总出行", summary.totalTrips, Modifier.weight(1f))
+        TripCountCard("今年", summary.tripsThisYear, Modifier.weight(1f))
+        TripCountCard("本月", summary.tripsThisMonth, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun TripCountCard(label: String, count: Int, modifier: Modifier = Modifier) {
+    Card(modifier = modifier) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "$count 次",
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopRoutesCard(summary: TravelSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("常坐线路", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "走过 ${summary.visitedCityCount} 座车站",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            summary.topRoutes.forEach { route ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("${route.origin} → ${route.destination}")
+                    Text(
+                        "${route.count} 次",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                item { Spacer(Modifier.height(16.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryImportHintCard(onClick: () -> Unit) {
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("还没有出行记录", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "统计只包含本地已保存的行程。如果邮箱里还有已经结束的行程，可以导入历史行程。",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PendingEmailImportCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ListItem(
+        headlineContent = { Text("有新的铁路行程等待确认") },
+        supportingContent = { Text("检查后保存到行程") },
+        leadingContent = { Icon(Icons.Default.Email, contentDescription = null) },
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TripsScreen(
+    view: TripsView,
+    onViewChange: (TripsView) -> Unit,
+    documents: List<SavedTravelDocument>,
+    archivedDocuments: List<SavedTravelDocument>,
+    hasPendingEmailImport: Boolean,
+    onPendingEmailImportClick: () -> Unit,
+    onTripClick: (SavedTravelDocument) -> Unit,
+    onSwipeArchive: (SavedTravelDocument) -> Unit,
+) {
+    val visibleDocuments = when (view) {
+        TripsView.UPCOMING -> documents
+        TripsView.HISTORY -> archivedDocuments
+    }
+    val showPendingImport = hasPendingEmailImport && view == TripsView.UPCOMING
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("行程") }, windowInsets = WindowInsets(0, 0, 0, 0))
+        TabRow(selectedTabIndex = view.ordinal) {
+            TripsView.entries.forEach { entry ->
+                Tab(
+                    selected = entry == view,
+                    onClick = { onViewChange(entry) },
+                    text = { Text(entry.label) },
+                )
+            }
+        }
+        if (visibleDocuments.isEmpty() && !showPendingImport) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        when (view) {
+                            TripsView.UPCOMING -> "还没有未出发的行程"
+                            TripsView.HISTORY -> "还没有历史行程"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (view == TripsView.UPCOMING) {
+                        Text(
+                            "点击右下角添加行程",
+                            modifier = Modifier.padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 12.dp,
+                    bottom = 88.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (showPendingImport) {
+                    item { PendingEmailImportCard(onPendingEmailImportClick) }
+                }
+                items(visibleDocuments, key = { it.document.stableId() }) { saved ->
+                    if (view == TripsView.UPCOMING) {
+                        SwipeToArchiveTripCard(
+                            saved = saved,
+                            onClick = { onTripClick(saved) },
+                            onArchive = { onSwipeArchive(saved) },
+                        )
+                    } else {
+                        CompactTripCard(saved = saved, onClick = { onTripClick(saved) })
+                    }
+                }
             }
         }
     }
@@ -1089,7 +1411,6 @@ private fun SettingsScreen(
     automaticEmailSyncInterval: AutomaticEmailSyncInterval,
     automaticEmailSyncStatus: AutomaticEmailSyncStatus,
     automaticEmailSyncStatusAt: Long,
-    onBack: () -> Unit,
     onEmailAccountClick: () -> Unit,
     onAutomaticEmailSyncChange: (Boolean) -> Unit,
     onAutomaticEmailSyncIntervalChange: (AutomaticEmailSyncInterval) -> Unit,
@@ -1101,13 +1422,11 @@ private fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
     var syncIntervalMenuExpanded by remember { mutableStateOf(false) }
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = { PageTopBar("设置", onBack) },
-    ) { contentPadding ->
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("设置") }, windowInsets = WindowInsets(0, 0, 0, 0))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = contentPadding,
+            contentPadding = PaddingValues(bottom = 88.dp),
         ) {
             item {
                 Text(
@@ -2014,6 +2333,39 @@ private fun formatLeadTime(minutes: Int): String {
         else -> "$hours 小时 $remainingMinutes 分钟"
     }
 }
+
+/**
+ * 每分钟更新一次的时刻。发车倒计时和「是否已经出发」共用同一个时间源，
+ * 对齐到整分钟，避免每秒触发重组。
+ */
+@Composable
+private fun rememberMinuteTicker(): Instant {
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(MINUTE_MILLIS - System.currentTimeMillis() % MINUTE_MILLIS)
+            now = Instant.now()
+        }
+    }
+    return now
+}
+
+private fun formatDepartureCountdown(departure: ZonedDateTime, now: Instant): String {
+    val minutes = Duration.between(now, departure.toInstant()).toMinutes()
+    if (minutes <= 0) return "即将发车"
+    val days = minutes / (24 * 60)
+    val hours = minutes % (24 * 60) / 60
+    val remainingMinutes = minutes % 60
+    return when {
+        days > 0 && hours > 0 -> "距发车 $days 天 $hours 小时"
+        days > 0 -> "距发车 $days 天"
+        hours > 0 && remainingMinutes > 0 -> "距发车 $hours 小时 $remainingMinutes 分钟"
+        hours > 0 -> "距发车 $hours 小时"
+        else -> "距发车 $remainingMinutes 分钟"
+    }
+}
+
+private const val MINUTE_MILLIS = 60_000L
 
 private val DEPARTURE_FORMAT = DateTimeFormatter.ofPattern("yyyy 年 M 月 d 日 HH:mm")
 private val COMPACT_DATE_FORMAT = DateTimeFormatter.ofPattern("M 月 d 日")
