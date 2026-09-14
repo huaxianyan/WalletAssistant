@@ -267,3 +267,19 @@ Material Design 3 的 NavigationBar 指南原文要求 3～5 个目的地，并�
 - `SettingsScreen` 从二级页面变成顶层标签页后，它的 `Scaffold` 会和外层 `Scaffold` 的 window insets 叠加，因此改为 `Column` + 顶栏 `windowInsets = WindowInsets(0, 0, 0, 0)`。`TripsScreen` 和 `DashboardScreen` 同样处理。
 - 原「自动同步已开启，新行程会显示在首页」的提示语已改为「行程页」，因为首页现在不再是行程列表。
 
+### 复核时修掉的三处
+
+1. `hasDeparted()` 内部是 `segments.minOf { ... }`，对空 segments 会抛 `NoSuchElementException`。首页一打开就要遍历整个列表，所以在 `DashboardScreen` 里先判 `segments.isNotEmpty()`。
+2. 原来无论有没有出行记录都渲染三张次数卡片，新用户会看到「总出行 0 次 / 今年 0 次 / 本月 0 次」挨着待确认提示，像是坏了。改为只在 `summary.hasTrips` 时显示卡片，否则改为历史导入提示。
+3. `SettingsScreen` 没有 FAB，底部内边距从 88dp 收到 16dp。
+
+### 构建验证
+
+| 命令 | 结果 |
+|---|---|
+| `:core:test` | `TripStatisticsTest` 11 个用例，0 失败 0 错误 |
+| `:app:assembleDebug` | BUILD SUCCESSFUL，`app-debug.apk` 约 63.6 MB |
+| `:app:assembleRelease` | BUILD SUCCESSFUL，R8 混淆与 lintVital 均通过，`app-release.apk` 约 45.6 MB |
+
+release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafaba2f329a58d091d1641630339f2cc3e81bb72c4e3e048fe5f068fe2be2be`。只读拉取真机上已安装的 `base.apk` 核对，**签名摘要完全一致**，所以 `adb install -r` 可以原地覆盖升级，不会清掉设备上的行程数据和邮箱配置。
+

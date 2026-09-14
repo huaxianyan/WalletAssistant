@@ -775,7 +775,9 @@ private fun DashboardScreen(
             now = now,
         )
     }
-    val nextTrip = documents.firstOrNull { !it.document.hasDeparted(now) }
+    val nextTrip = documents.firstOrNull { saved ->
+        saved.document.segments.isNotEmpty() && !saved.document.hasDeparted(now)
+    }
     val hasNothingSaved = documents.isEmpty() && archivedDocuments.isEmpty()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -810,11 +812,12 @@ private fun DashboardScreen(
                 nextTrip?.let { saved ->
                     item { NextTripCard(saved = saved, now = now, onClick = { onTripClick(saved) }) }
                 }
-                item { TripCountCards(summary) }
-                if (summary.topRoutes.isNotEmpty()) {
-                    item { TopRoutesCard(summary) }
-                }
-                if (summary.totalTrips == 0 && hasEmailAccount) {
+                if (summary.hasTrips) {
+                    item { TripCountCards(summary) }
+                    if (summary.topRoutes.isNotEmpty()) {
+                        item { TopRoutesCard(summary) }
+                    }
+                } else if (hasEmailAccount) {
                     item { HistoryImportHintCard(onImportHistoryClick) }
                 }
             }
@@ -1426,7 +1429,7 @@ private fun SettingsScreen(
         TopAppBar(title = { Text("设置") }, windowInsets = WindowInsets(0, 0, 0, 0))
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
         ) {
             item {
                 Text(
