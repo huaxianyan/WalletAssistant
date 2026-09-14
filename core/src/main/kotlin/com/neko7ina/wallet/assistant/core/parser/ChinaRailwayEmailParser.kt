@@ -432,6 +432,9 @@ private data class MutableOrder(
                                 departureTimeEpochMillis =
                                     segment.departureTime.toInstant().toEpochMilli(),
                                 departureTime = segment.departureTime,
+                                // 必须用存储的原文，不能换成 railStationName。
+                                // journeyKey 由此重算，而它是 stableId() 的组成部分；
+                                // 归一化会改变已有行程的主键。详见 RailStationNames 的说明。
                                 origin = segment.origin.name,
                                 destination = segment.destination.name,
                                 serviceNumber = segment.serviceNumber,

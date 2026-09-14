@@ -3,6 +3,8 @@ package com.neko7ina.wallet.assistant.wallet
 import com.neko7ina.wallet.assistant.BuildConfig
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
+import com.neko7ina.wallet.assistant.core.model.railRoute
+import com.neko7ina.wallet.assistant.core.model.railStationName
 import com.neko7ina.wallet.assistant.core.model.stableId
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -62,7 +64,7 @@ class GoogleWalletPassFactory {
                         put("cardTitle", localized("铁路出行"))
                         put(
                             "header",
-                            localized("${segment.origin.name} → ${segment.destination.name}"),
+                            localized(segment.railRoute),
                         )
                         put("subheader", localized(segment.serviceNumber))
                         putJsonObject("validTimeInterval") {
@@ -75,8 +77,8 @@ class GoogleWalletPassFactory {
                             }
                         }
                         putJsonArray("textModulesData") {
-                            addTextModule("origin", "出发站", segment.origin.name)
-                            addTextModule("destination", "目的站", segment.destination.name)
+                            addTextModule("origin", "出发站", segment.origin.railStationName)
+                            addTextModule("destination", "目的站", segment.destination.railStationName)
                             addTextModule(
                                 "departure_date",
                                 "出发日期",

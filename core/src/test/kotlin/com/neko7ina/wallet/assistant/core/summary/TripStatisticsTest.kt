@@ -130,8 +130,8 @@ class TripStatisticsTest {
 
         assertEquals(
             listOf(
-                RouteStat("北京南", "上海虹桥", 3),
-                RouteStat("上海虹桥", "杭州东", 2),
+                RouteStat("北京南站", "上海虹桥站", 3),
+                RouteStat("上海虹桥站", "杭州东站", 2),
             ),
             summary.topRoutes,
         )
@@ -150,15 +150,58 @@ class TripStatisticsTest {
 
         assertEquals(
             listOf(
-                RouteStat("北京南", "上海虹桥", 1),
-                RouteStat("杭州东", "北京南", 1),
+                RouteStat("北京南站", "上海虹桥站", 1),
+                RouteStat("杭州东站", "北京南站", 1),
             ),
             summary.topRoutes,
         )
     }
 
     @Test
-    fun `走过城市数按去重后的站点数统计`() {
+    fun `站名带不带「站」的同一线路合并统计`() {
+        val summary = TripStatistics.summarize(
+            listOf(
+                trip("E1", "镇江", "上海", at(2019, 5, 1, 8, 0)),
+                trip("E2", "镇江站", "上海站", at(2026, 5, 1, 8, 0)),
+            ),
+            now = NOW,
+        )
+
+        assertEquals(2, summary.totalTrips)
+        assertEquals(listOf(RouteStat("镇江站", "上海站", 2)), summary.topRoutes)
+        assertEquals(2, summary.visitedStationCount)
+    }
+
+    @Test
+    fun `多段行程的首末站名都走归一`() {
+        val document = trip(
+            "E1",
+            "北京南",
+            "济南西",
+            at(2026, 1, 1, 8, 0),
+        ).let { base ->
+            base.copy(
+                segments = listOf(
+                    base.segments.single(),
+                    base.segments.single().copy(
+                        origin = Location("济南西站"),
+                        destination = Location("上海虹桥"),
+                        departureTime = at(2026, 1, 1, 10, 30),
+                    ),
+                ),
+            )
+        }
+
+        val summary = TripStatistics.summarize(listOf(document), now = NOW)
+
+        assertEquals(1, summary.totalTrips)
+        assertEquals(listOf(RouteStat("北京南站", "上海虹桥站", 1)), summary.topRoutes)
+        // 只统计首段起点和末段终点，中间换乘站不计入走过车站数。
+        assertEquals(2, summary.visitedStationCount)
+    }
+
+    @Test
+    fun `走过车站数按去重后的站点数统计`() {
         val summary = TripStatistics.summarize(
             listOf(
                 trip("E1", "北京南", "上海虹桥", at(2026, 1, 1, 8, 0)),
@@ -167,7 +210,7 @@ class TripStatisticsTest {
             now = NOW,
         )
 
-        assertEquals(2, summary.visitedCityCount)
+        assertEquals(2, summary.visitedStationCount)
         assertTrue(summary.hasTrips)
     }
 
@@ -194,7 +237,7 @@ class TripStatisticsTest {
         val summary = TripStatistics.summarize(listOf(document), now = NOW)
 
         assertEquals(1, summary.totalTrips)
-        assertEquals(listOf(RouteStat("北京南", "上海虹桥", 1)), summary.topRoutes)
+        assertEquals(listOf(RouteStat("北京南站", "上海虹桥站", 1)), summary.topRoutes)
     }
 
     @Test

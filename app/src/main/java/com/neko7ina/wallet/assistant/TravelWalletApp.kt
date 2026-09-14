@@ -113,6 +113,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
+import com.neko7ina.wallet.assistant.core.model.railRoute
 import com.neko7ina.wallet.assistant.core.model.stableId
 import com.neko7ina.wallet.assistant.core.parser.ChinaRailwayEmailParser
 import com.neko7ina.wallet.assistant.core.parser.ParseResult
@@ -891,7 +892,7 @@ private fun NextTripCard(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "${segment.origin.name} → ${segment.destination.name}",
+                segment.railRoute,
                 modifier = Modifier.padding(top = 2.dp),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -951,7 +952,7 @@ private fun TopRoutesCard(summary: TravelSummary) {
             ) {
                 Text("常坐线路", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "走过 ${summary.visitedCityCount} 座车站",
+                    "走过 ${summary.visitedStationCount} 座车站",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1216,7 +1217,7 @@ private fun CompactTripCard(
                 )
             }
             Text(
-                "${segment.origin.name} → ${segment.destination.name}",
+                segment.railRoute,
                 modifier = Modifier.padding(top = 8.dp),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -1281,7 +1282,7 @@ private fun TripDetailDialog(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "${segment.origin.name} → ${segment.destination.name}",
+                    segment.railRoute,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                     style = MaterialTheme.typography.titleLarge,
                 )
@@ -2299,7 +2300,7 @@ private fun TripInformation(document: TravelDocument, modifier: Modifier = Modif
         Column(modifier = Modifier.padding(20.dp)) {
             Text(segment.serviceNumber, style = MaterialTheme.typography.headlineSmall)
             Text(
-                "${segment.origin.name} → ${segment.destination.name}",
+                segment.railRoute,
                 modifier = Modifier.padding(top = 4.dp),
                 style = MaterialTheme.typography.titleLarge,
             )

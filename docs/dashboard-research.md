@@ -86,7 +86,7 @@ DAO 只有两个列表查询（`TravelDocumentDao.kt:12-16`）：`observeActive(
 | 席别分布 | `payload.segments[0].seatAssignments[].category` | 可做，需解码 | |
 | 乘车人排行 | `payload.travelers[].name` | 可做，需解码 | 姓名不出设备，符合隐私约定 |
 | 已改签 / 已退票统计 | `payload.status` | 可做 | |
-| 走过多少城市 / 车站数 | `origin.name` / `destination.name` 去重 | 可做 | 这是里程的合理替代品 |
+| 走过多少车站 | `origin.name` / `destination.name` 去重 | 可做 | 这是里程的合理替代品 |
 | **出行里程** | 无 | **做不到** | 见 3.2 |
 | **行程时长** | `arrivalTime` 恒为 null | **做不到** | 见 3.2 |
 | 票款合计 | `reservation.totalPrice` | **有陷阱** | 见 3.3 |
@@ -98,7 +98,7 @@ DAO 只有两个列表查询（`TravelDocumentDao.kt:12-16`）：`observeActive(
 - 自建「站到站」里程表。全国 3000 多个车站的两两距离，数据要自己维护、自己校对，而且来源没有权威公开接口。
 - 按线路粗估。这就属于猜测，直接违反 `AGENTS.md` 里「缺失信息不猜测」的实现原则。
 
-**建议不做**。用「走过 N 座城市」「最常坐的线路」替代，信息量不差，而且全部有据可查。
+**建议不做**。用「走过 N 座车站」「最常坐的线路」替代，信息量不差，而且全部有据可查。
 
 （待七叔核对：如果你手上有 12306 原始邮件，可以翻一封确认正文里是否真的没有里程字样。我是从解析器覆盖范围倒推的，不如直接看邮件可靠。）
 
@@ -318,7 +318,7 @@ release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafab
 ### 记录的两点
 
 1. **首页「即将出发」在无未出发行程时整块消失。** 有历史记录（`summary.hasTrips == true`）但 `nextTrip == null` 时，`LazyColumn` 只渲染次数卡和线路卡，倒计时区没有任何占位文案，视觉上留大片空白。已补 `NoUpcomingTripCard`（「暂无即将出发的行程」），条件为 `nextTrip == null && !hasNothingSaved`，后者保证「全新用户 + 待确认邮件」那条路径不会多出这张卡。
-2. **常坐线路会把同一线路拆成两条。** 设备上出现「镇江站 → 上海站 13 次」和「镇江 → 上海 11 次」，是 12306 通知里站名有时带「站」字有时不带导致的。属数据源质量问题，不是本次改动引入，但会削弱 Top 线路的可读性。当前按原文站名分组，未做归一化。
+2. **常坐线路会把同一线路拆成两条。** 设备上出现「镇江站 → 上海站 13 次」和「镇江 → 上海 11 次」，是 12306 邮件里站名在 2020 年前后改了写法导致的。**已修**，见第十二节。
 
 ### 未完成
 
@@ -344,6 +344,62 @@ release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafab
 
 顺带能一起看的（本轮已知问题，不是回归）：
 
-- 常坐线路里「镇江站 → 上海站」和「镇江 → 上海」会分成两条，站名归一化还没做。
+- 常坐线路里「镇江站 → 上海站」和「镇江 → 上海」应合并成一条；「走过 N 座车站」的 N 应该比之前小（上海 / 上海站、镇江 / 镇江站 各多算了一座）。
 - 首页倒计时需要等一分钟观察 `rememberMinuteTicker()` 是否真的对齐整分钟刷新。
+
+## 十二、车站名归一化
+
+### 问题
+
+12306 邮件在 2020 年前后改了车站名的写法：老邮件不写「站」（「镇江」），新邮件写（「镇江站」），指的是同一个车站。设备上因此出现「上海站 → 镇江站 14 次」「镇江站 → 上海站 13 次」「镇江 → 上海 11 次」三条并存的线路。
+
+站名来自 `TICKET_REGEX`（`ChinaRailwayEmailParser.kt:287`）的第 7、8 组，是**原样截取邮件正文**，中间没有任何处理，所以邮件怎么写就怎么入库。
+
+影响不止常坐线路：
+
+- `TripStatistics` 的线路分组把同一线路拆成两条
+- **`visitedStationCount` 被撑大**。它把起终点名丢进 `Set` 去重，上海 / 上海站、镇江 / 镇江站各算一座，首页那个「走过 16 座车站」至少多算了 2
+- 列表、通知、Google Wallet 卡片的文案不统一
+- `ChinaRailwayEmailParser.kt:92-95` 的改签候选筛选用 `origin == origin && destination == destination`，跨年份的改签单理论上会失配（有 `travelerCandidates.size == 1` 兜底，风险低）
+
+### 为什么不能在录入或读取时归一
+
+一开始想在解析层做，查下来会踩到身份计算：
+
+```
+RailwayTicket.journeyKey = 出发时间 | 起点 | 终点 | 车次      (parser:335-340)
+        ↓
+TravelDocument.stableId() = SHA-256(provider + 订单号 + journeyKey)   (TravelDocumentId.kt:6)
+```
+
+`stableId()` 是本地行程主键，同时是这些地方的 key：
+
+- `TripReminderScheduler` 的 Alarm ID
+- `TripAutoArchiveScheduler` 的自动归档任务 ID
+- `GoogleWalletPassFactory:24` 的 pass `objectId`
+- `replaceReservations` 判断「新行程还是更新」
+
+而且要命的是 `MutableOrder.fromDocuments()`（parser:424-457）：**增量同步每次都会拿已保存行程的 `Location.name` 反算 `journeyKey`**，`EmailSyncCoordinator:78-82` 把 `repository.allDocuments()` 当基线喂进去，算完的结果还会落库。
+
+现在「存进去再读出来算一遍」之所以稳定，正是因为 `Location.name` 存的是邮件原文。**一旦在解析层或反序列化时改动它，`journeyKey` 就变，`stableId()` 跟着变，设备上已有的行程主键会全部失配 —— 下次同步变成重复插入，提醒和归档任务、Wallet pass 一起孤立。**
+
+### 做法
+
+**存储保留邮件原文，归一化只发生在展示层和统计层。**
+
+- 新增 `core/.../model/RailStationNames.kt`：`RailStationNames.normalize()` 只补末尾的「站」，已是当前写法就原样返回，所以可重复调用；配套 `Location.railStationName` 和 `TravelSegment.railRoute` 两个扩展属性。
+- 方向选**补「站」**（七叔定）：新数据本来就带「站」，归一对它是恒等操作，只有历史数据需要被改写，能让「当前标准」和「实际数据」保持一致。
+- 落点：`TripStatistics`（分组 + 去重前归一，计数字段相应改名为 `visitedStationCount`）、`TravelWalletApp` 的 4 处行程文案、`TripReminderReceiver` 的通知路由、`GoogleWalletPassFactory` 的 header 与「出发站 / 目的站」字段。
+- `ChinaRailwayEmailParser.kt:435-436` 保持读 `Location.name` **原文**，并加了注释说明原因 —— 那里是 `journeyKey` 的重建点，归一化就是改主键。
+- 已知取舍：「补站」会对老数据里的裸站名加后缀，如果某条邮件写的其实是城市名而非站名，会得到一个真实但不对应的站名。七叔已确认接受。
+
+### 验证
+
+| 命令 | 结果 |
+|---|---|
+| `:core:test` | 25 个用例，0 失败 0 错误（`TripStatisticsTest` 13、`RailStationNamesTest` 7、`ChinaRailwayEmailParserTest` 5） |
+
+`ChinaRailwayEmailParserTest` 仍断言 `assertEquals("苹果站", segment.origin.name)` 并通过，说明**解析输出没变**，主键不受影响。
+
+新增用例：`站名带不带「站」的同一线路合并统计`（镇江 / 上海 与 镇江站 / 上海站 合并为 2 次）、`多段行程的首末站名都走归一`。
 

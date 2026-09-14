@@ -2,6 +2,7 @@ package com.neko7ina.wallet.assistant.core.summary
 
 import com.neko7ina.wallet.assistant.core.model.TravelDocument
 import com.neko7ina.wallet.assistant.core.model.TravelDocumentStatus
+import com.neko7ina.wallet.assistant.core.model.railStationName
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -22,12 +23,15 @@ data class RouteStat(
  *
  * 统计只覆盖本地已保存的行程。用户首次邮箱同步时如果选择「仅同步未出发」，
  * 这里会是空的，需要引导用户导入历史行程。
+ *
+ * 站名统一走 [railStationName]。12306 老邮件不写「站」、新邮件写，不归一的话
+ * 同一个车站会被拆成两个，[visitedStationCount] 会偏大、[topRoutes] 也会拆开。
  */
 data class TravelSummary(
     val totalTrips: Int,
     val tripsThisYear: Int,
     val tripsThisMonth: Int,
-    val visitedCityCount: Int,
+    val visitedStationCount: Int,
     val topRoutes: List<RouteStat>,
 ) {
     val hasTrips: Boolean get() = totalTrips > 0
@@ -37,7 +41,7 @@ data class TravelSummary(
             totalTrips = 0,
             tripsThisYear = 0,
             tripsThisMonth = 0,
-            visitedCityCount = 0,
+            visitedStationCount = 0,
             topRoutes = emptyList(),
         )
     }
@@ -84,7 +88,7 @@ object TripStatistics {
                 trip.departure.year == nowLocal.year &&
                     trip.departure.monthValue == nowLocal.monthValue
             },
-            visitedCityCount = completedTrips
+            visitedStationCount = completedTrips
                 .flatMap { trip -> listOf(trip.origin, trip.destination) }
                 .toSet()
                 .size,
@@ -99,8 +103,8 @@ object TripStatistics {
         if (departure.toInstant() > now) return null
         return CompletedTrip(
             departure = departure,
-            origin = first.origin.name,
-            destination = segments.last().destination.name,
+            origin = first.origin.railStationName,
+            destination = segments.last().destination.railStationName,
         )
     }
 
