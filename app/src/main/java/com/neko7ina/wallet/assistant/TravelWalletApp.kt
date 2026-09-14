@@ -12,10 +12,12 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -72,8 +76,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -84,7 +86,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -395,7 +396,7 @@ fun TravelWalletApp(
                                 screen = Screen.EMAIL_IMPORT
                             },
                             onTripClick = { selectedTripId = it.document.stableId() },
-                            onSwipeArchive = { viewModel.setArchived(it, true) },
+                            onArchive = { viewModel.setArchived(it, true) },
                         )
                     },
                     settings = {
@@ -1025,13 +1026,22 @@ private fun TripsScreen(
     hasPendingEmailImport: Boolean,
     onPendingEmailImportClick: () -> Unit,
     onTripClick: (SavedTravelDocument) -> Unit,
-    onSwipeArchive: (SavedTravelDocument) -> Unit,
+    onArchive: (SavedTravelDocument) -> Unit,
 ) {
-    val visibleDocuments = when (view) {
-        TripsView.UPCOMING -> documents
-        TripsView.HISTORY -> archivedDocuments
+    val pagerState = rememberPagerState(initialPage = view.ordinal) { TripsView.entries.size }
+
+    // 滑动翻页 → 同步标签栏。用 currentPage 而不是 settledPage，翻到一半就能看到标签跟着走。
+    LaunchedEffect(pagerState.currentPage) {
+        TripsView.entries.getOrNull(pagerState.currentPage)?.let { target ->
+            if (target != view) onViewChange(target)
+        }
     }
-    val showPendingImport = hasPendingEmailImport && view == TripsView.UPCOMING
+    // 点标签 → 让翻页动画跟过去。拖动过程中不插手，否则会和手指抢方向。
+    LaunchedEffect(view) {
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != view.ordinal) {
+            pagerState.animateScrollToPage(view.ordinal)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("行程") }, windowInsets = WindowInsets(0, 0, 0, 0))
@@ -1044,116 +1054,140 @@ private fun TripsScreen(
                 )
             }
         }
-        if (visibleDocuments.isEmpty() && !showPendingImport) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            TripsPage(
+                view = TripsView.entries[page],
+                documents = documents,
+                archivedDocuments = archivedDocuments,
+                showPendingImport = hasPendingEmailImport,
+                onPendingEmailImportClick = onPendingEmailImportClick,
+                onTripClick = onTripClick,
+                onArchive = onArchive,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TripsPage(
+    view: TripsView,
+    documents: List<SavedTravelDocument>,
+    archivedDocuments: List<SavedTravelDocument>,
+    showPendingImport: Boolean,
+    onPendingEmailImportClick: () -> Unit,
+    onTripClick: (SavedTravelDocument) -> Unit,
+    onArchive: (SavedTravelDocument) -> Unit,
+) {
+    val visibleDocuments = when (view) {
+        TripsView.UPCOMING -> documents
+        TripsView.HISTORY -> archivedDocuments
+    }
+    val pendingImport = showPendingImport && view == TripsView.UPCOMING
+
+    if (visibleDocuments.isEmpty() && !pendingImport) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    when (view) {
+                        TripsView.UPCOMING -> "还没有未出发的行程"
+                        TripsView.HISTORY -> "还没有历史行程"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (view == TripsView.UPCOMING) {
                     Text(
-                        when (view) {
-                            TripsView.UPCOMING -> "还没有未出发的行程"
-                            TripsView.HISTORY -> "还没有历史行程"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
+                        "点击右下角添加行程",
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (view == TripsView.UPCOMING) {
-                        Text(
-                            "点击右下角添加行程",
-                            modifier = Modifier.padding(top = 8.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 12.dp,
-                    bottom = 88.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (showPendingImport) {
-                    item { PendingEmailImportCard(onPendingEmailImportClick) }
-                }
-                items(visibleDocuments, key = { it.document.stableId() }) { saved ->
-                    if (view == TripsView.UPCOMING) {
-                        SwipeToArchiveTripCard(
-                            saved = saved,
-                            onClick = { onTripClick(saved) },
-                            onArchive = { onSwipeArchive(saved) },
-                        )
-                    } else {
-                        CompactTripCard(saved = saved, onClick = { onTripClick(saved) })
-                    }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 88.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (pendingImport) {
+                item { PendingEmailImportCard(onPendingEmailImportClick) }
+            }
+            items(visibleDocuments, key = { it.document.stableId() }) { saved ->
+                if (view == TripsView.UPCOMING) {
+                    UpcomingTripCard(
+                        saved = saved,
+                        onClick = { onTripClick(saved) },
+                        onArchive = { onArchive(saved) },
+                    )
+                } else {
+                    CompactTripCard(saved = saved, onClick = { onTripClick(saved) })
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SwipeToArchiveTripCard(
+private fun UpcomingTripCard(
     saved: SavedTravelDocument,
     onClick: () -> Unit,
     onArchive: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onArchive()
-                true
-            } else {
-                false
-            }
-        },
-    )
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                    .padding(end = 24.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Icon(
-                    Icons.Default.Archive,
-                    contentDescription = "归档行程",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
-        },
-        modifier = modifier,
-        enableDismissFromStartToEnd = false,
-    ) {
-        CompactTripCard(saved = saved, onClick = onClick)
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier.fillMaxWidth()) {
+        CompactTripCard(
+            saved = saved,
+            onClick = onClick,
+            onLongClick = { menuExpanded = true },
+        )
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("归档") },
+                leadingIcon = { Icon(Icons.Default.Archive, contentDescription = null) },
+                onClick = {
+                    menuExpanded = false
+                    onArchive()
+                },
+            )
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CompactTripCard(
     saved: SavedTravelDocument,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val segment = saved.document.segments.first()
     val seat = segment.seatAssignments.firstOrNull {
         it.status == TravelDocumentStatus.CONFIRMED
     } ?: segment.seatAssignments.firstOrNull()
     Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(CardDefaults.shape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(

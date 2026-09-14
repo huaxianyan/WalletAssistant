@@ -256,7 +256,7 @@ Material Design 3 的 NavigationBar 指南原文要求 3～5 个目的地，并�
 |---|---|
 | 1 | `core/src/main/kotlin/com/neko7ina/wallet/assistant/core/summary/TripStatistics.kt`，含 `TravelSummary`、`RouteStat` 和 `summarize()`；配套测试 `core/src/test/kotlin/.../summary/TripStatisticsTest.kt` |
 | 2 | `TravelWalletApp.kt` 新增 `MainTab`、`TripsView` 和 `MainTabsScaffold`，`Screen` 收敛为只有二级页面；FAB 提到外层 Scaffold；标签页用淡入淡出 |
-| 3 | `TripsScreen` 取代 `HomeScreen` 与 `ArchiveScreen`，顶部用 `TabRow` 切换未出发与历史 |
+| 3 | `TripsScreen` 取代 `HomeScreen` 与 `ArchiveScreen`，顶部用 `TabRow` 切换未出发与历史，内容用 `HorizontalPager` 承载，可左右滑动翻页 |
 | 4 | `DashboardScreen` 含 `NextTripCard`、`TripCountCards`、`TopRoutesCard`；空状态为 `DashboardEmptyState`，另有 `HistoryImportHintCard` |
 | 5 | `AGENTS.md` 补两条约定，README 新增「一眼看到出行概况」一节，`site/index.html` 增卡片，CHANGELOG 填 [未发布] |
 
@@ -266,6 +266,21 @@ Material Design 3 的 NavigationBar 指南原文要求 3～5 个目的地，并�
 
 - `SettingsScreen` 从二级页面变成顶层标签页后，它的 `Scaffold` 会和外层 `Scaffold` 的 window insets 叠加，因此改为 `Column` + 顶栏 `windowInsets = WindowInsets(0, 0, 0, 0)`。`TripsScreen` 和 `DashboardScreen` 同样处理。
 - 原「自动同步已开启，新行程会显示在首页」的提示语已改为「行程页」，因为首页现在不再是行程列表。
+
+### 归档手势改成「长按卡片弹菜单」
+
+历史从二级入口变成与未出发平级的标签页之后，左右滑动自然要让给页面切换。而未出发卡片原来用的是 **左滑归档**（`SwipeToDismissBox`，`EndToStart`），和「左滑翻到历史页」是同一个手势方向。
+
+这在 Compose 里没有折中余地：`SwipeToDismissBox` 内部是 `anchoredDraggable`，子级会先拿到横向拖拽并消费掉，父级的 `HorizontalPager` 根本收不到事件。两个都挂在左滑上，必然废掉一个。
+
+七叔拍板：**归档改为长按未出发卡片弹出菜单**，横向手势完全交给翻页；菜单结构留白，以后别的操作也往这里放。
+
+实现要点：
+
+- 删掉 `SwipeToArchiveTripCard` 和 `SwipeToDismissBox` / `SwipeToDismissBoxValue` / `rememberSwipeToDismissBoxState` 三个导入。
+- 新增 `UpcomingTripCard`：`Box` 包 `CompactTripCard` + `DropdownMenu`，菜单项「归档」。
+- `CompactTripCard` 加 `onLongClick: (() -> Unit)? = null`，`Card(onClick = ...)` 换成 `Card` + `Modifier.clip(CardDefaults.shape).combinedClickable(...)`。**注意点击涟漪要自己 clip**，`Card(onClick)` 那套自带裁剪，换成 `combinedClickable` 后 `modifier` 排在 `Surface` 的裁剪之前，不补 `clip` 的话波纹是方的。
+- `TripsScreen` 里的手势同步：`rememberPagerState(initialPage = view.ordinal) { TripsView.entries.size }`；`LaunchedEffect(pagerState.currentPage)` 把翻页结果同步给标签栏（用 `currentPage` 而非 `settledPage`，翻到一半标签就跟着走）；`LaunchedEffect(view)` 在点击标签时 `animateScrollToPage`，但用 `!pagerState.isScrollInProgress` 护栏避免和手指抢方向。
 
 ### 复核时修掉的三处
 
@@ -308,4 +323,27 @@ release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafab
 ### 未完成
 
 行程页 `TabRow`（未出发 / 历史）与设置页（顶栏无返回箭头、从邮箱配置返回落在设置页）需要点击操作，验收时设备正被另一个会话（SevenMirror `dev.notificationmirroring.android`）并发驱动，两边都会用 `adb shell input tap`，继续盲点会互相打断，故停手。待设备空闲再补。
+
+## 十一、下次真机验收清单
+
+设备被七叔带走，以下都还没在真机上跑过。当前分支 `feature/dashboard` 已构建通过的包是 `app/build/outputs/apk/release/app-release.apk`（43.5 MB，签名与设备一致，可 `install -r`）。
+
+**动手前先做并发检查**：无输入采两次截图比对哈希，若不同说明有别的会话在驱动设备，停手。详见设备验收技能里的「并发占用检查」。
+
+| # | 要验的 | 怎么看 |
+|---|---|---|
+| 1 | 首页无未出发行程时的占位卡 | 当前设备正好是「有历史、无未出发」，装上就能看到「暂无即将出发的行程」，不会再留空白 |
+| 2 | 行程页左右滑动翻页 | 在列表上横向拖，未出发 ↔ 历史 应跟手；标签栏在拖过一半时跟着变 |
+| 3 | 翻页动画 | 滑动本身是 pager 的自然动画，松手后应带惯性吸附到整页；点标签则是平滑滚动过去 |
+| 4 | 长按卡片弹菜单 | 长按未出发卡片 → 弹出「归档」菜单；点归档后该行程进历史页 |
+| 5 | 长按不误触 | 长按后手指抬起不应同时触发「打开详情」 |
+| 6 | 列表纵向滚动未被劫持 | 上下滚行程列表应正常，不会变成翻页 |
+| 7 | 设置页 | 顶栏无返回箭头；从设置进邮箱配置再退出，应回到设置标签页 |
+| 8 | 冷启动落点 | 先 `am force-stop` 再 `am start -W`，应落在首页 |
+| 9 | 无崩溃 | `adb logcat -b crash` 为空 |
+
+顺带能一起看的（本轮已知问题，不是回归）：
+
+- 常坐线路里「镇江站 → 上海站」和「镇江 → 上海」会分成两条，站名归一化还没做。
+- 首页倒计时需要等一分钟观察 `rememberMinuteTicker()` 是否真的对齐整分钟刷新。
 
