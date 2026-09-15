@@ -403,3 +403,30 @@ TravelDocument.stableId() = SHA-256(provider + 订单号 + journeyKey)   (Travel
 
 新增用例：`站名带不带「站」的同一线路合并统计`（镇江 / 上海 与 镇江站 / 上海站 合并为 2 次）、`多段行程的首末站名都走归一`。
 
+## 十三、发布 v1.1.0
+
+| 项 | 值 |
+|---|---|
+| 版本 | `1.1.0`（versionCode 3） |
+| 分支 | `feature/dashboard` → `main`（fast-forward，7 个提交） |
+| Tag | `v1.1.0`（annotated，与 `v1.0.0` / `v1.0.1` 同格式） |
+| 发布方式 | 推送 tag 触发 `.github/workflows/release.yml`，自动测试 → 签名构建 → 验签 → 建 Release |
+| 产物 | `chuxing-1.1.0.apk` 与 `chuxing-1.1.0.apk.sha256` |
+
+版本号按语义化版本走 minor：本次新增出行概况首页、三项底栏与页内滑动切换，属新功能而非修补。工作流会校验 `versionName` 与 tag 是否严格一致（`grep -Fq "versionName = \"${version}\"" app/build.gradle.kts`），两处必须同步改。
+
+本地验证：`:core:test` 26 例 0 失败；`:app:assembleRelease` BUILD SUCCESSFUL，43.51 MB，`aapt2 dump badging` 确认 `versionCode='3' versionName='1.1.0'`，签名 `eafaba2f…fe2be2be` 与工作流中写死的期望证书一致。
+
+### 官网首页展示图
+
+`site/index.html` 在 hero 之后新增「一眼看到出行概况」展示区，配真机首页截图 `site/assets/screenshot-dashboard.png`（1080×2109，98.7 KB）。
+
+裁切范围取 `y=175 ~ 2284`，两侧边界都是算出来的而不是目测的：
+
+- **上边界 175**：按像素扫描，状态栏内容占 `69~106`，TopAppBar 的「首页」标题文字占 `231~286`。标题中心 258.5，而 Material 3 `TopAppBar` 高 64dp（2.625 倍率下 168px），反推顶栏顶部 = 258.5 − 84 = 174.5，即状态栏底边。
+- **下边界 2284**：`y=2074` 起行主色从内容背景 `(14,14,15)` 变为 `(25,25,27)`，这是 NavigationBar 背景，高度 `2284 − 2074 = 210px`，正好是 80dp；`y=2284` 起再变为 `(26,26,28)`，即系统手势导航区。
+
+所以裁掉的是纯系统 UI，三项底栏完整保留。原始截图留在 `.device-verify/`（该目录已进 `.gitignore`，不进仓库）。
+
+试算过缩放版本，720 宽的反而比 1080 原尺寸更大（113 KB vs 101 KB）—— LANCZOS 重采样引入了额外色彩，PNG 压缩率下降，因此保留全分辨率。
+
