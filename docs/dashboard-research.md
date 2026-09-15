@@ -324,9 +324,9 @@ release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafab
 
 行程页 `TabRow`（未出发 / 历史）与设置页（顶栏无返回箭头、从邮箱配置返回落在设置页）需要点击操作，验收时设备正被另一个会话（SevenMirror `dev.notificationmirroring.android`）并发驱动，两边都会用 `adb shell input tap`，继续盲点会互相打断，故停手。待设备空闲再补。
 
-## 十一、下次真机验收清单
+## 十一、真机验收清单
 
-设备被七叔带走，以下都还没在真机上跑过。当前分支 `feature/dashboard` 已构建通过的包是 `app/build/outputs/apk/release/app-release.apk`（43.5 MB，签名与设备一致，可 `install -r`）。
+七叔于 2026-09-15 将设备接入本机，安装预览包后逐项体验，确认通过，随后合并并发布 `v1.1.0`。以下清单保留，供后续回归时参照。
 
 **动手前先做并发检查**：无输入采两次截图比对哈希，若不同说明有别的会话在驱动设备，停手。详见设备验收技能里的「并发占用检查」。
 
