@@ -344,7 +344,7 @@ release 包签名 `CN=WalletAssistant, O=NeKo7inA, C=CN`，证书 SHA-256 `eafab
 
 顺带能一起看的（本轮已知问题，不是回归）：
 
-- 常坐线路里「镇江站 → 上海站」和「镇江 → 上海」应合并成一条；「走过 N 座车站」的 N 应该比之前小（上海 / 上海站、镇江 / 镇江站 各多算了一座）。
+- 常坐线路里「镇江站 → 上海站」和「镇江 → 上海」应合并成一条，并按去掉「站」的形式展示成「镇江 → 上海」；「走过 N 座车站」的 N 应该比之前小（上海 / 上海站、镇江 / 镇江站 各多算了一座）。
 - 首页倒计时需要等一分钟观察 `rememberMinuteTicker()` 是否真的对齐整分钟刷新。
 
 ## 十二、车站名归一化
@@ -387,17 +387,17 @@ TravelDocument.stableId() = SHA-256(provider + 订单号 + journeyKey)   (Travel
 
 **存储保留邮件原文，归一化只发生在展示层和统计层。**
 
-- 新增 `core/.../model/RailStationNames.kt`：`RailStationNames.normalize()` 只补末尾的「站」，已是当前写法就原样返回，所以可重复调用；配套 `Location.railStationName` 和 `TravelSegment.railRoute` 两个扩展属性。
-- 方向选**补「站」**（七叔定）：新数据本来就带「站」，归一对它是恒等操作，只有历史数据需要被改写，能让「当前标准」和「实际数据」保持一致。
+- 新增 `core/.../model/RailStationNames.kt`：`RailStationNames.normalize()` 去掉末尾的「站」，本来就不带「站」的原样返回，所以可重复调用；配套 `Location.railStationName` 和 `TravelSegment.railRoute` 两个扩展属性。
+- 方向选**去「站」**（七叔定；2026-09-15 从原先的「补站」改过来）：邮件里带不带「站」都不动，统一在展示时去掉。卡片字段本来就写着「出发站 / 目的站」，名字里再带一个「站」是重复的；去掉之后也跟历史数据的主流写法一致。
 - 落点：`TripStatistics`（分组 + 去重前归一，计数字段相应改名为 `visitedStationCount`）、`TravelWalletApp` 的 4 处行程文案、`TripReminderReceiver` 的通知路由、`GoogleWalletPassFactory` 的 header 与「出发站 / 目的站」字段。
 - `ChinaRailwayEmailParser.kt:435-436` 保持读 `Location.name` **原文**，并加了注释说明原因 —— 那里是 `journeyKey` 的重建点，归一化就是改主键。
-- 已知取舍：「补站」会对老数据里的裸站名加后缀，如果某条邮件写的其实是城市名而非站名，会得到一个真实但不对应的站名。七叔已确认接受。
+- 已知取舍：只按后缀剥离，不识别车站实体。若某个车站名本身就以「站」字结尾而非「地名＋站」（极罕见），也会被剥掉；名字恰好写作「站」时保留原文，避免渲染成空串。
 
 ### 验证
 
 | 命令 | 结果 |
 |---|---|
-| `:core:test` | 25 个用例，0 失败 0 错误（`TripStatisticsTest` 13、`RailStationNamesTest` 7、`ChinaRailwayEmailParserTest` 5） |
+| `:core:test` | 26 个用例，0 失败 0 错误（`RailStationNamesTest` 8、`TripStatisticsTest` 13、`ChinaRailwayEmailParserTest` 5） |
 
 `ChinaRailwayEmailParserTest` 仍断言 `assertEquals("苹果站", segment.origin.name)` 并通过，说明**解析输出没变**，主键不受影响。
 

@@ -24,8 +24,9 @@ data class RouteStat(
  * 统计只覆盖本地已保存的行程。用户首次邮箱同步时如果选择「仅同步未出发」，
  * 这里会是空的，需要引导用户导入历史行程。
  *
- * 站名统一走 [railStationName]。12306 老邮件不写「站」、新邮件写，不归一的话
- * 同一个车站会被拆成两个，[visitedStationCount] 会偏大、[topRoutes] 也会拆开。
+ * 站名统一走 [railStationName]，也就是去掉末尾的「站」。12306 老邮件不写「站」、
+ * 新邮件写，不归一的话同一个车站会被拆成两个，[visitedStationCount] 会偏大、
+ * [topRoutes] 也会拆开。
  */
 data class TravelSummary(
     val totalTrips: Int,

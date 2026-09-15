@@ -130,8 +130,8 @@ class TripStatisticsTest {
 
         assertEquals(
             listOf(
-                RouteStat("北京南站", "上海虹桥站", 3),
-                RouteStat("上海虹桥站", "杭州东站", 2),
+                RouteStat("北京南", "上海虹桥", 3),
+                RouteStat("上海虹桥", "杭州东", 2),
             ),
             summary.topRoutes,
         )
@@ -150,8 +150,8 @@ class TripStatisticsTest {
 
         assertEquals(
             listOf(
-                RouteStat("北京南站", "上海虹桥站", 1),
-                RouteStat("杭州东站", "北京南站", 1),
+                RouteStat("北京南", "上海虹桥", 1),
+                RouteStat("杭州东", "北京南", 1),
             ),
             summary.topRoutes,
         )
@@ -168,7 +168,7 @@ class TripStatisticsTest {
         )
 
         assertEquals(2, summary.totalTrips)
-        assertEquals(listOf(RouteStat("镇江站", "上海站", 2)), summary.topRoutes)
+        assertEquals(listOf(RouteStat("镇江", "上海", 2)), summary.topRoutes)
         assertEquals(2, summary.visitedStationCount)
     }
 
@@ -195,7 +195,7 @@ class TripStatisticsTest {
         val summary = TripStatistics.summarize(listOf(document), now = NOW)
 
         assertEquals(1, summary.totalTrips)
-        assertEquals(listOf(RouteStat("北京南站", "上海虹桥站", 1)), summary.topRoutes)
+        assertEquals(listOf(RouteStat("北京南", "上海虹桥", 1)), summary.topRoutes)
         // 只统计首段起点和末段终点，中间换乘站不计入走过车站数。
         assertEquals(2, summary.visitedStationCount)
     }
@@ -237,7 +237,7 @@ class TripStatisticsTest {
         val summary = TripStatistics.summarize(listOf(document), now = NOW)
 
         assertEquals(1, summary.totalTrips)
-        assertEquals(listOf(RouteStat("北京南站", "上海虹桥站", 1)), summary.topRoutes)
+        assertEquals(listOf(RouteStat("北京南", "上海虹桥", 1)), summary.topRoutes)
     }
 
     @Test

@@ -5,42 +5,50 @@ import kotlin.test.assertEquals
 
 class RailStationNamesTest {
     @Test
-    fun `老格式的站名补上「站」`() {
-        assertEquals("镇江站", RailStationNames.normalize("镇江"))
-        assertEquals("上海站", RailStationNames.normalize("上海"))
-        assertEquals("上海虹桥站", RailStationNames.normalize("上海虹桥"))
-        assertEquals("北京南站", RailStationNames.normalize("北京南"))
+    fun `新格式的站名去掉末尾的「站」`() {
+        assertEquals("镇江", RailStationNames.normalize("镇江站"))
+        assertEquals("上海", RailStationNames.normalize("上海站"))
+        assertEquals("上海虹桥", RailStationNames.normalize("上海虹桥站"))
+        assertEquals("北京南", RailStationNames.normalize("北京南站"))
     }
 
     @Test
-    fun `已经是新格式的站名原样返回`() {
-        assertEquals("镇江站", RailStationNames.normalize("镇江站"))
-        assertEquals("上海虹桥站", RailStationNames.normalize("上海虹桥站"))
+    fun `本来就不带「站」的站名原样返回`() {
+        assertEquals("镇江", RailStationNames.normalize("镇江"))
+        assertEquals("上海虹桥", RailStationNames.normalize("上海虹桥"))
     }
 
     @Test
     fun `重复归一得到同一个结果`() {
-        val once = RailStationNames.normalize("镇江")
+        val once = RailStationNames.normalize("镇江站")
 
+        assertEquals("镇江", once)
         assertEquals(once, RailStationNames.normalize(once))
     }
 
     @Test
-    fun `去掉首尾空白后再判断是否需要补「站」`() {
-        assertEquals("镇江站", RailStationNames.normalize("  镇江 "))
-        assertEquals("镇江站", RailStationNames.normalize("\t镇江\n"))
-        assertEquals("镇江站", RailStationNames.normalize("镇江站 "))
+    fun `去掉首尾空白后再判断是否需要去「站」`() {
+        assertEquals("镇江", RailStationNames.normalize("  镇江站 "))
+        assertEquals("镇江", RailStationNames.normalize("\t镇江站\n"))
+        assertEquals("镇江", RailStationNames.normalize("镇江站 "))
     }
 
     @Test
-    fun `空站名原样返回而不是变成单独一个「站」`() {
+    fun `空站名原样返回`() {
         assertEquals("", RailStationNames.normalize(""))
         assertEquals("", RailStationNames.normalize("   "))
     }
 
     @Test
-    fun `只补末尾的后缀不动站名中间已有的字`() {
-        assertEquals("上下站台站", RailStationNames.normalize("上下站台"))
+    fun `站名本身就写作「站」时保留原文而不是返回空串`() {
+        assertEquals("站", RailStationNames.normalize("站"))
+        assertEquals("站", RailStationNames.normalize(" 站 "))
+    }
+
+    @Test
+    fun `只去末尾的后缀不动站名中间已有的字`() {
+        assertEquals("上下站台", RailStationNames.normalize("上下站台站"))
+        assertEquals("上下站台", RailStationNames.normalize("上下站台"))
     }
 
     @Test
@@ -55,8 +63,8 @@ class RailStationNamesTest {
             attributes = emptyMap(),
         )
 
-        assertEquals("镇江站", segment.origin.railStationName)
-        assertEquals("上海站", segment.destination.railStationName)
-        assertEquals("镇江站 → 上海站", segment.railRoute)
+        assertEquals("镇江", segment.origin.railStationName)
+        assertEquals("上海", segment.destination.railStationName)
+        assertEquals("镇江 → 上海", segment.railRoute)
     }
 }
